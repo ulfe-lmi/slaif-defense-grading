@@ -13,7 +13,8 @@ It is designed for the common Moodle/Canvas download format where:
 
 The tool extracts each submission ZIP to a temporary directory under `/tmp` (or reads submission
 folders directly), finds readable files, concatenates them with clear delimiters, and finally
-creates **one big output file** for all students.
+creates **one big output file** for all students (or one output file per student if you use the
+output directory option).
 
 ---
 
@@ -33,7 +34,7 @@ File suffix matching is case‑insensitive (e.g. `.PY` is included).
 
 Each included file is wrapped with a clear BEGIN/END delimiter.
 
-In the **final output file**, delimiter lines are augmented with:
+In the **final output file** (or per-student files), delimiter lines are augmented with:
 
 1. The student's name (inferred from the top‑level folder name in the master ZIP, e.g. `Name Surname_...` → `Name Surname`).
 2. The submission name (ZIP base name or submission folder name).
@@ -75,9 +76,12 @@ For each submission ZIP or submission folder:
 
 The partial files are saved in the temporary working directory while the script runs.
 
-### Step 4 — Create the big concatenated output file
+### Step 4 — Create the final output
 
-Finally, the script concatenates all partial `.txt` files into the single output file you specify with `--output-file`.
+Finally, the script either:
+
+- Concatenates all partial `.txt` files into the single output file you specify with `--output-file`.
+- Writes one concatenated `.txt` file per student into the directory you specify with `--output-directory`.
 
 While copying each partial file into the big output, it detects delimiter lines and rewrites them to include:
 
@@ -103,6 +107,12 @@ By default, the temporary directory is removed automatically when the script exi
 
 ```bash
 python preprocesslabs.py --input-file <MASTER.zip> --output-file <OUTPUT.txt>
+````
+
+### Per-student outputs
+
+```bash
+python preprocesslabs.py --input-file <MASTER.zip> --output-directory <OUTPUT_DIR>
 ````
 
 Example:
@@ -137,4 +147,3 @@ Files
 
 *   `preprocess-labs.py` — the command-line tool
 *   `README.md` — this documentation
-
