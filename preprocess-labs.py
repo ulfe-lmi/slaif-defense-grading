@@ -2,17 +2,17 @@
 """preprocesslabs.py
 
 Unpacks a "Moodle-style" master ZIP that contains one folder per student, where each folder
-contains (one or more) submission ZIP files.
+contains (one or more) submission ZIP files or submission subfolders.
 
-For every submission ZIP found inside the master ZIP:
-  1) Extract it into a temporary directory under /tmp.
+For every submission ZIP or submission folder found inside the master ZIP:
+  1) Extract it into a temporary directory under /tmp (ZIPs only).
   2) Collect readable source files with suffix: .txt, .m, .py (case-insensitive).
   3) Concatenate the collected files into a per-submission text file with clear BEGIN/END
      delimiters.
 
 Finally, concatenates all per-submission text files into ONE big output file. In the final
 output, each BEGIN/END delimiter line is augmented with the student's name (inferred from
-folder names like "Name Surname_12345_assignsubmission_file") and the submission ZIP name.
+folder names like "Name Surname_12345_assignsubmission_file") and the submission name.
 
 Example:
   python preprocesslabs.py --input-file submissions.zip --output-file all_submissions.txt
@@ -44,10 +44,11 @@ DELIM_RE = re.compile(r"^==== (BEGIN|END) (.+) ====$")
 class SubmissionArtifact:
     student_label: str
     student_folder: str
-    submission_zip_path: Path
-    submission_zip_base: str
+    submission_source: Path
+    submission_name: str
     extracted_dir: Path
     partial_concat_path: Path
+    source_kind: str
 
 
 def eprint(*args: object, **kwargs: object) -> None:
@@ -125,6 +126,24 @@ def iter_nested_zips(root_dir: Path) -> Iterable[Path]:
                 yield Path(dirpath) / fn
 
 
+def iter_submission_dirs(student_folder: Path) -> List[Path]:
+    """Return candidate submission folders inside a student folder.
+
+    If direct subfolders exist, treat each subfolder as a submission folder.
+    Otherwise, if the student folder contains files, treat the student folder
+    itself as the submission folder.
+    """
+    subdirs = [p for p in student_folder.iterdir() if p.is_dir()]
+    if subdirs:
+        return sorted(subdirs, key=lambda p: p.as_posix().casefold())
+
+    has_files = any(p.is_file() for p in student_folder.iterdir())
+    if has_files:
+        return [student_folder]
+
+    return []
+
+
 def decode_text_file(path: Path) -> str:
     """Read a file as text.
 
@@ -160,7 +179,7 @@ def write_partial_concatenation(extracted_dir: Path, out_path: Path) -> int:
     with out_path.open("w", encoding="utf-8", newline="\n") as out:
         if not readable_files:
             out.write("==== BEGIN (no_readable_files_found) ====\n")
-            out.write("No .txt, .m, or .py files were found inside this submission ZIP.\n")
+            out.write("No .txt, .m, or .py files were found inside this submission.\n")
             out.write("==== END (no_readable_files_found) ====\n")
             return 0
 
@@ -195,9 +214,9 @@ def unique_path(path: Path) -> Path:
 def build_big_output(artifacts: Sequence[SubmissionArtifact], output_file: Path) -> None:
     """Concatenate all partial files into one big output, augmenting delimiter headers."""
 
-    # Deterministic order: by student label (casefold), then by zip base, then by path.
+    # Deterministic order: by student label (casefold), then by submission name, then by path.
     def sort_key(a: SubmissionArtifact) -> Tuple[str, str, str]:
-        return (a.student_label.casefold(), a.submission_zip_base.casefold(), str(a.submission_zip_path).casefold())
+        return (a.student_label.casefold(), a.submission_name.casefold(), str(a.submission_source).casefold())
 
     artifacts_sorted = sorted(artifacts, key=sort_key)
 
@@ -215,8 +234,8 @@ def build_big_output(artifacts: Sequence[SubmissionArtifact], output_file: Path)
                     m = DELIM_RE.match(stripped)
                     if m:
                         kind, payload = m.group(1), m.group(2)
-                        # Add student name + zip name in every delimiter line.
-                        new_line = f"==== {kind} {art.student_label} | {art.submission_zip_base} | {payload} ====\n"
+                        # Add student name + submission name in every delimiter line.
+                        new_line = f"==== {kind} {art.student_label} | {art.submission_name} | {payload} ====\n"
                         out.write(new_line)
                     else:
                         out.write(line)
@@ -226,24 +245,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
     """Create an ArgumentParser with detailed help text."""
     description = textwrap.dedent(
         """\
-        Preprocess a master ZIP that contains per-student folders with submission ZIPs.
+        Preprocess a master ZIP that contains per-student folders with submission ZIPs
+        or submission subfolders.
 
         What it does (high level):
           1) Extracts the master ZIP to a temporary directory under /tmp.
           2) Finds every nested .zip (recursively) inside the extracted contents.
-          3) For each nested .zip:
-             - extracts it under /tmp
+             If a student folder has no nested ZIPs, uses subfolders as submission sources.
+          3) For each submission source (ZIP or folder):
+             - extracts ZIPs under /tmp (folders are read directly)
              - finds readable files: .txt, .m, .py
              - concatenates them into a per-submission .txt with BEGIN/END delimiters
           4) Concatenates all per-submission .txt files into ONE big output file.
              Every delimiter line in the final output is augmented with the student's name
              (inferred from folder names like "Name Surname_12345_assignsubmission_file")
-             and the submission ZIP name.
+             and the submission name.
 
         Output format (delimiter lines):
-          ==== BEGIN <student> | <submission_zip> | <relative_path_inside_submission> ====
+          ==== BEGIN <student> | <submission_name> | <relative_path_inside_submission> ====
           ... file content ...
-          ==== END   <student> | <submission_zip> | <relative_path_inside_submission> ====
+          ==== END   <student> | <submission_name> | <relative_path_inside_submission> ====
 
         Notes:
           - Extraction happens under /tmp (temporary directory).
@@ -316,61 +337,113 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             eprint(f"ERROR: failed to extract master ZIP: {exc}")
             return 3
 
-        nested_zips = sorted(iter_nested_zips(outer_extract), key=lambda p: p.as_posix().casefold())
-
-        if not nested_zips:
-            eprint("ERROR: No nested .zip files were found inside the master ZIP.")
-            eprint("       (Expected: per-student folders containing submission ZIPs.)")
-            return 4
-
         unzipped_root = tmpdir / "unzipped_submissions"
         unzipped_root.mkdir(parents=True, exist_ok=True)
 
-        eprint(f"[preprocesslabs] Found {len(nested_zips)} nested ZIP(s). Processing...")
+        student_folders = sorted(
+            [p for p in outer_extract.iterdir() if p.is_dir()],
+            key=lambda p: p.as_posix().casefold(),
+        )
 
-        for zpath in nested_zips:
-            student_label, student_folder = infer_student_label(zpath, outer_extract)
-            zip_base = zpath.stem
+        if not student_folders:
+            eprint("ERROR: No student folders were found inside the master ZIP.")
+            return 4
 
-            # Mirror relative structure under unzipped_root.
-            rel = zpath.relative_to(outer_extract)
-            extracted_dir = unzipped_root / rel.parent / zip_base
-            extracted_dir.mkdir(parents=True, exist_ok=True)
+        total_zips = 0
+        total_dirs = 0
 
-            eprint(f"[preprocesslabs]  - {student_label} :: extracting {rel.as_posix()}")
-
-            try:
-                safe_extract_zip(zpath, extracted_dir)
-            except zipfile.BadZipFile:
-                eprint(f"[preprocesslabs]    WARNING: Bad zip file, skipping: {zpath}")
-                continue
-            except Exception as exc:  # noqa: BLE001
-                eprint(f"[preprocesslabs]    WARNING: Failed to extract {zpath}: {exc}")
-                continue
-
-            partial_path = unique_path(extracted_dir.parent / f"{zip_base}.txt")
-
-            try:
-                num = write_partial_concatenation(extracted_dir, partial_path)
-            except Exception as exc:  # noqa: BLE001
-                eprint(f"[preprocesslabs]    WARNING: Failed to concatenate files for {zpath}: {exc}")
-                continue
-
-            eprint(f"[preprocesslabs]    -> concatenated {num} file(s) into {partial_path.name}")
-
-            artifacts.append(
-                SubmissionArtifact(
-                    student_label=student_label,
-                    student_folder=student_folder,
-                    submission_zip_path=zpath,
-                    submission_zip_base=zip_base,
-                    extracted_dir=extracted_dir,
-                    partial_concat_path=partial_path,
-                )
+        for student_folder_path in student_folders:
+            student_zips = sorted(
+                iter_nested_zips(student_folder_path),
+                key=lambda p: p.as_posix().casefold(),
             )
 
+            if student_zips:
+                total_zips += len(student_zips)
+                for zpath in student_zips:
+                    student_label, student_folder = infer_student_label(zpath, outer_extract)
+                    zip_base = zpath.stem
+
+                    # Mirror relative structure under unzipped_root.
+                    rel = zpath.relative_to(outer_extract)
+                    extracted_dir = unzipped_root / rel.parent / zip_base
+                    extracted_dir.mkdir(parents=True, exist_ok=True)
+
+                    eprint(f"[preprocesslabs]  - {student_label} :: extracting {rel.as_posix()}")
+
+                    try:
+                        safe_extract_zip(zpath, extracted_dir)
+                    except zipfile.BadZipFile:
+                        eprint(f"[preprocesslabs]    WARNING: Bad zip file, skipping: {zpath}")
+                        continue
+                    except Exception as exc:  # noqa: BLE001
+                        eprint(f"[preprocesslabs]    WARNING: Failed to extract {zpath}: {exc}")
+                        continue
+
+                    partial_path = unique_path(extracted_dir.parent / f"{zip_base}.txt")
+
+                    try:
+                        num = write_partial_concatenation(extracted_dir, partial_path)
+                    except Exception as exc:  # noqa: BLE001
+                        eprint(f"[preprocesslabs]    WARNING: Failed to concatenate files for {zpath}: {exc}")
+                        continue
+
+                    eprint(f"[preprocesslabs]    -> concatenated {num} file(s) into {partial_path.name}")
+
+                    artifacts.append(
+                        SubmissionArtifact(
+                            student_label=student_label,
+                            student_folder=student_folder,
+                            submission_source=zpath,
+                            submission_name=zip_base,
+                            extracted_dir=extracted_dir,
+                            partial_concat_path=partial_path,
+                            source_kind="zip",
+                        )
+                    )
+                continue
+
+            submission_dirs = iter_submission_dirs(student_folder_path)
+            if not submission_dirs:
+                continue
+
+            total_dirs += len(submission_dirs)
+
+            for submission_dir in submission_dirs:
+                student_label, student_folder = infer_student_label(submission_dir, outer_extract)
+                submission_name = submission_dir.name
+
+                rel = submission_dir.relative_to(outer_extract)
+                extracted_dir = submission_dir
+                partial_path = unique_path(unzipped_root / rel.parent / f"{submission_name}.txt")
+
+                eprint(f"[preprocesslabs]  - {student_label} :: reading folder {rel.as_posix()}")
+
+                try:
+                    num = write_partial_concatenation(extracted_dir, partial_path)
+                except Exception as exc:  # noqa: BLE001
+                    eprint(f"[preprocesslabs]    WARNING: Failed to concatenate files for {submission_dir}: {exc}")
+                    continue
+
+                eprint(f"[preprocesslabs]    -> concatenated {num} file(s) into {partial_path.name}")
+
+                artifacts.append(
+                    SubmissionArtifact(
+                        student_label=student_label,
+                        student_folder=student_folder,
+                        submission_source=submission_dir,
+                        submission_name=submission_name,
+                        extracted_dir=extracted_dir,
+                        partial_concat_path=partial_path,
+                        source_kind="dir",
+                    )
+                )
+
+        if total_zips or total_dirs:
+            eprint(f"[preprocesslabs] Found {total_zips} nested ZIP(s) and {total_dirs} submission folder(s).")
+
         if not artifacts:
-            eprint("ERROR: No valid submission ZIPs were processed.")
+            eprint("ERROR: No valid submission ZIPs or folders were processed.")
             return 5
 
         eprint(f"[preprocesslabs] Building final output -> {output_file}")
