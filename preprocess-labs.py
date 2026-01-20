@@ -155,12 +155,29 @@ def decode_text_file(path: Path) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def is_probably_text(path: Path, sample_size: int = 32 * 1024) -> bool:
+    """Return True if a file appears to be text, based on a small byte sample."""
+    data = path.read_bytes()[:sample_size]
+    if not data:
+        return True
+
+    if b"\x00" in data:
+        return False
+
+    text_bytes = set(range(32, 127)) | {9, 10, 12, 13, 8}
+    non_text = sum(byte not in text_bytes for byte in data)
+    return (non_text / len(data)) <= 0.30
+
+
 def list_readable_files(extracted_dir: Path) -> List[Path]:
     """Return all readable files under extracted_dir."""
     files: List[Path] = []
     for p in extracted_dir.rglob("*"):
         if p.is_file() and p.suffix.lower() in READABLE_SUFFIXES:
-            files.append(p)
+            if is_probably_text(p):
+                files.append(p)
+            else:
+                eprint(f"Warning: skipping binary file {p}")
 
     files.sort(key=lambda x: x.as_posix().lower())
     return files
