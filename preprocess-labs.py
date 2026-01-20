@@ -258,6 +258,37 @@ def build_big_output(artifacts: Sequence[SubmissionArtifact], output_file: Path)
                         out.write(line)
 
 
+def sanitize_filename(name: str) -> str:
+    """Return a filename-safe version of the provided name."""
+    cleaned = re.sub(r"[\\/]+", "_", name.strip())
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned or "UNKNOWN"
+
+
+def build_per_student_outputs(
+    artifacts: Sequence[SubmissionArtifact],
+    output_dir: Path,
+) -> List[Path]:
+    """Create one concatenated output file per student in output_dir."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    by_student: dict[str, List[SubmissionArtifact]] = {}
+    for art in artifacts:
+        by_student.setdefault(art.student_folder, []).append(art)
+
+    written: List[Path] = []
+    for student_folder, student_artifacts in sorted(
+        by_student.items(),
+        key=lambda item: item[0].casefold(),
+    ):
+        filename = sanitize_filename(student_folder)
+        output_path = unique_path(output_dir / f"{filename}.txt")
+        build_big_output(student_artifacts, output_path)
+        written.append(output_path)
+
+    return written
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     """Create an ArgumentParser with detailed help text."""
     description = textwrap.dedent(
@@ -273,10 +304,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
              - extracts ZIPs under /tmp (folders are read directly)
              - finds readable files: .txt, .m, .py
              - concatenates them into a per-submission .txt with BEGIN/END delimiters
-          4) Concatenates all per-submission .txt files into ONE big output file.
-             Every delimiter line in the final output is augmented with the student's name
-             (inferred from folder names like "Name Surname_12345_assignsubmission_file")
-             and the submission name.
+        4) Either:
+           - Concatenates all per-submission .txt files into ONE big output file, or
+           - Writes one concatenated output file per student in an output directory.
+           Every delimiter line in outputs is augmented with the student's name (inferred
+           from folder names like "Name Surname_12345_assignsubmission_file") and the
+           submission name.
 
         Output format (delimiter lines):
           ==== BEGIN <student> | <submission_name> | <relative_path_inside_submission> ====
@@ -302,11 +335,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Path to the master ZIP file (the starting point).",
     )
 
-    parser.add_argument(
+    output_group = parser.add_mutually_exclusive_group(required=True)
+    output_group.add_argument(
         "--output-file",
         "-o",
-        required=True,
         help="Path to write the final big concatenated .txt file.",
+    )
+    output_group.add_argument(
+        "--output-directory",
+        "-d",
+        help="Directory to write one concatenated .txt file per student.",
     )
 
     return parser
@@ -329,7 +367,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
 
     input_zip = Path(args.input_file).expanduser().resolve()
-    output_file = Path(args.output_file).expanduser().resolve()
+    output_file = Path(args.output_file).expanduser().resolve() if args.output_file else None
+    output_directory = Path(args.output_directory).expanduser().resolve() if args.output_directory else None
 
     if not input_zip.exists():
         eprint(f"ERROR: input file does not exist: {input_zip}")
@@ -463,14 +502,27 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             eprint("ERROR: No valid submission ZIPs or folders were processed.")
             return 5
 
-        eprint(f"[preprocesslabs] Building final output -> {output_file}")
-        try:
-            build_big_output(artifacts, output_file)
-        except Exception as exc:  # noqa: BLE001
-            eprint(f"ERROR: Failed to write output file: {exc}")
-            return 6
+        if output_directory is not None:
+            if output_directory.exists() and not output_directory.is_dir():
+                eprint(f"ERROR: output directory is not a directory: {output_directory}")
+                return 6
+            eprint(f"[preprocesslabs] Building per-student outputs -> {output_directory}")
+            try:
+                written = build_per_student_outputs(artifacts, output_directory)
+            except Exception as exc:  # noqa: BLE001
+                eprint(f"ERROR: Failed to write output directory: {exc}")
+                return 6
+            eprint(f"[preprocesslabs] Done. Wrote {len(written)} file(s) to {output_directory}")
+        else:
+            assert output_file is not None
+            eprint(f"[preprocesslabs] Building final output -> {output_file}")
+            try:
+                build_big_output(artifacts, output_file)
+            except Exception as exc:  # noqa: BLE001
+                eprint(f"ERROR: Failed to write output file: {exc}")
+                return 6
 
-        eprint(f"[preprocesslabs] Done. Wrote {output_file}")
+            eprint(f"[preprocesslabs] Done. Wrote {output_file}")
 
     return 0
 
