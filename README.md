@@ -7,10 +7,13 @@ It is designed for the common Moodle/Canvas download format where:
 - You start with one ZIP (the *master* ZIP).
 - Inside it there is typically **one folder per student**, e.g.
   `Name Surname_16712_assignsubmission_file/`
-- Inside each student folder there is usually **another ZIP file** (the student's submission ZIP).
-- Inside each submission ZIP there can be multiple files and folders.
+- Inside each student folder there is usually **another ZIP file** (the student's submission ZIP),
+  or a **submission subfolder** that contains the same files that would have been in the ZIP.
+- Inside each submission ZIP or submission folder there can be multiple files and folders.
 
-The tool extracts each submission ZIP to a temporary directory under `/tmp`, finds readable files, concatenates them with clear delimiters, and finally creates **one big output file** for all students.
+The tool extracts each submission ZIP to a temporary directory under `/tmp` (or reads submission
+folders directly), finds readable files, concatenates them with clear delimiters, and finally
+creates **one big output file** for all students.
 
 ---
 
@@ -33,16 +36,16 @@ Each included file is wrapped with a clear BEGIN/END delimiter.
 In the **final output file**, delimiter lines are augmented with:
 
 1. The student's name (inferred from the top‑level folder name in the master ZIP, e.g. `Name Surname_...` → `Name Surname`).
-2. The submission ZIP base name.
-3. The relative file path inside the submission ZIP.
+2. The submission name (ZIP base name or submission folder name).
+3. The relative file path inside the submission ZIP or folder.
 
 Example delimiter lines:
 
 ```
 
-\==== BEGIN Name Surname | submission\_zip\_name | path/to/file.py ====  
+\==== BEGIN Name Surname | submission\_name | path/to/file.py ====  
 ... file content ...  
-\==== END Name Surname | submission\_zip\_name | path/to/file.py ====
+\==== END Name Surname | submission\_name | path/to/file.py ====
 
 ````
 
@@ -58,13 +61,14 @@ The script creates a temporary working directory under `/tmp` and extracts the m
 
 It recursively searches inside the extracted master ZIP contents for any files ending in `.zip`.
 
-Each nested ZIP is treated as a *submission ZIP*.
+Each nested ZIP is treated as a *submission ZIP*. If a student folder contains no ZIPs, each
+submission subfolder is treated like a submission ZIP would have been.
 
 ### Step 3 — Extract each submission ZIP and create a partial concatenation file
 
-For each submission ZIP:
+For each submission ZIP or submission folder:
 
-1. The ZIP is extracted under `/tmp` (inside the temporary working directory).
+1. ZIPs are extracted under `/tmp` (inside the temporary working directory); folders are read in place.
 2. The extracted contents are searched recursively for files ending in `.txt`, `.m`, or `.py`.
 3. All found readable files are concatenated into a single text file (the **partial concatenation**), named after the submission ZIP:
    - `submission.zip` → `submission.txt`
@@ -78,7 +82,7 @@ Finally, the script concatenates all partial `.txt` files into the single output
 While copying each partial file into the big output, it detects delimiter lines and rewrites them to include:
 
 - Student name
-- Submission ZIP name
+- Submission name (ZIP base name or folder name)
 
 ---
 
@@ -122,7 +126,9 @@ Notes and limitations
 
 *   The script decodes text as UTF‑8 with replacement for invalid bytes. This avoids crashes on mixed encodings.
 *   Extraction is done with a **path traversal safeguard** (ZIP slip protection) to prevent malicious ZIP entries writing outside the intended `/tmp` directory.
-*   Only nested ZIPs found inside the master ZIP are treated as "submission ZIPs". If your master ZIP does not contain nested ZIPs, the script will exit with an error.
+*   Nested ZIPs found inside the master ZIP are treated as "submission ZIPs". If a student folder does not
+    contain ZIPs, its submission subfolders are used instead. If neither ZIPs nor submission subfolders are
+    found, the script will exit with an error.
 
 * * *
 
@@ -131,5 +137,4 @@ Files
 
 *   `preprocess-labs.py` — the command-line tool
 *   `README.md` — this documentation
-
 
