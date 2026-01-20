@@ -30,11 +30,13 @@ import tempfile
 import textwrap
 import zipfile
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Iterable, List, Optional, Sequence, Tuple
 
 
 READABLE_SUFFIXES = {".txt", ".m", ".py"}
+SIMILARITY_THRESHOLD = 0.98
 
 # Delimiter format used in per-submission concatenation.
 DELIM_RE = re.compile(r"^==== (BEGIN|END) (.+) ====$")
@@ -289,6 +291,84 @@ def build_per_student_outputs(
     return written
 
 
+def normalize_similarity_text(text: str) -> str:
+    """Normalize text for similarity comparisons."""
+    return "\n".join(line.rstrip() for line in text.splitlines())
+
+
+def read_artifact_text(artifact: SubmissionArtifact) -> str:
+    """Read the concatenated text for a submission artifact."""
+    return artifact.partial_concat_path.read_text(encoding="utf-8", errors="replace")
+
+
+def merge_artifact_group(artifacts: Sequence[SubmissionArtifact]) -> SubmissionArtifact:
+    """Merge similar artifacts into a single representative artifact."""
+    if not artifacts:
+        raise ValueError("Expected at least one artifact to merge.")
+
+    students = sorted({art.student_label for art in artifacts}, key=str.casefold)
+    submissions = sorted({art.submission_name for art in artifacts}, key=str.casefold)
+    merged_label = " & ".join(students)
+    merged_submission = " + ".join(submissions)
+
+    first = artifacts[0]
+    return SubmissionArtifact(
+        student_label=merged_label,
+        student_folder=first.student_folder,
+        submission_source=first.submission_source,
+        submission_name=merged_submission,
+        extracted_dir=first.extracted_dir,
+        partial_concat_path=first.partial_concat_path,
+        source_kind=first.source_kind,
+    )
+
+
+def group_similar_artifacts(artifacts: Sequence[SubmissionArtifact]) -> List[SubmissionArtifact]:
+    """Group similar submissions and return representative artifacts."""
+    if not artifacts:
+        return []
+
+    texts = [normalize_similarity_text(read_artifact_text(art)) for art in artifacts]
+    parents = list(range(len(artifacts)))
+
+    def find(idx: int) -> int:
+        while parents[idx] != idx:
+            parents[idx] = parents[parents[idx]]
+            idx = parents[idx]
+        return idx
+
+    def union(a: int, b: int) -> None:
+        root_a = find(a)
+        root_b = find(b)
+        if root_a != root_b:
+            parents[root_b] = root_a
+
+    for i, art_i in enumerate(artifacts):
+        for j in range(i + 1, len(artifacts)):
+            art_j = artifacts[j]
+            if art_i.student_folder == art_j.student_folder:
+                continue
+            if texts[i] == texts[j]:
+                union(i, j)
+                continue
+            similarity = SequenceMatcher(None, texts[i], texts[j]).ratio()
+            if similarity >= SIMILARITY_THRESHOLD:
+                union(i, j)
+
+    grouped: dict[int, List[SubmissionArtifact]] = {}
+    for idx, art in enumerate(artifacts):
+        grouped.setdefault(find(idx), []).append(art)
+
+    merged_artifacts: List[SubmissionArtifact] = []
+    for group in grouped.values():
+        if len(group) > 1:
+            students = ", ".join(sorted({art.student_label for art in group}, key=str.casefold))
+            eprint(f"[preprocesslabs] Similarity match: grouping submissions for {students}")
+        merged_artifacts.append(merge_artifact_group(group))
+
+    return merged_artifacts
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     """Create an ArgumentParser with detailed help text."""
     description = textwrap.dedent(
@@ -345,6 +425,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--output-directory",
         "-d",
         help="Directory to write one concatenated .txt file per student.",
+    )
+
+    parser.add_argument(
+        "--similarity-check",
+        action="store_true",
+        help=(
+            "When set, compare all submissions for similarity before building the final "
+            "concatenated output, and merge near-identical submissions into a single entry "
+            "that lists all student names."
+        ),
     )
 
     return parser
@@ -515,6 +605,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             eprint(f"[preprocesslabs] Done. Wrote {len(written)} file(s) to {output_directory}")
         else:
             assert output_file is not None
+            if args.similarity_check:
+                eprint("[preprocesslabs] Running similarity check across submissions")
+                artifacts = group_similar_artifacts(artifacts)
             eprint(f"[preprocesslabs] Building final output -> {output_file}")
             try:
                 build_big_output(artifacts, output_file)
