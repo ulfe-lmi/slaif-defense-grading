@@ -1,0 +1,6372 @@
+==== BEGIN Adnan Halilović | Adnan Halilović_26670_assignsubmission_file | labvaja5_1.m ====
+%% RV vaja 5 – 1. naloga: Podvzorčenje slik
+
+% Primerjava treh metod interpolacije pri zmanjsevanju locljivosti
+
+clear;
+close all;
+clc;
+
+%% Branje videa
+videoFile = 'Holywood.avi';
+v = VideoReader(videoFile);
+
+% Preberemo prvi frame
+frame = readFrame(v);
+
+figure;
+imshow(frame);
+title('Originalna slika');
+
+%% Faktorji zmanjsanja
+scales = [1/2, 1/4, 1/8];
+
+%% Skupni figure
+figure;
+sgtitle('Primerjava metod interpolacije pri podvzorcenju');
+
+%% METODA 1: Nearest Neighbor
+disp('Metoda 1: Nearest Neighbor');
+
+for i = 1:length(scales)
+    s = scales(i);
+
+    img_nn = imresize(frame, s, 'nearest');
+
+    subplot(3,3,i);
+    imshow(img_nn);
+    title(['Nearest neighbor, faktor = ', num2str(s)]);
+    
+    % shranjevanje
+    imwrite(img_nn, ...
+        ['NN_scale_', num2str(s*100), '.png']);
+end
+
+%% METODA 2: Bilinear brez filtriranja (antialiasing OFF)
+disp('Metoda 2: Bilinear brez filtriranja');
+
+for i = 1:length(scales)
+    s = scales(i);
+
+    img_bl_noaa = imresize(frame, s, ...
+        'bilinear', 'Antialiasing', false);
+
+    subplot(3,3,i+3);
+    imshow(img_bl_noaa);
+    title(['Bilinear brez AA, faktor = ', num2str(s)]);
+    
+    imwrite(img_bl_noaa, ...
+        ['BL_noAA_scale_', num2str(s*100), '.png']);
+end
+
+%% METODA 3: Bilinear s filtriranjem (antialiasing ON)
+disp('Metoda 3: Bilinear s filtriranjem');
+
+for i = 1:length(scales)
+    s = scales(i);
+
+    img_bl_aa = imresize(frame, s, ...
+        'bilinear', 'Antialiasing', true);
+
+    subplot(3,3,i+6);
+    imshow(img_bl_aa);
+    title(['Bilinear z AA, faktor = ', num2str(s)]);
+    
+    imwrite(img_bl_aa, ...
+        ['BL_AA_scale_', num2str(s*100), '.png']);
+end
+==== END Adnan Halilović | Adnan Halilović_26670_assignsubmission_file | labvaja5_1.m ====
+
+==== BEGIN Adnan Halilović | Adnan Halilović_26670_assignsubmission_file | labvaja5_2_1.m ====
+%% Vaja 5 – 2.1: Sledenje igralca (Evklidska razdalja v RGB, brez učenja)
+clear; close all; clc;
+
+v = VideoReader('squash.avi');
+
+frameRGB = readFrame(v);
+
+figure(1);
+imshow(frameRGB);
+title('Z dvema klikoma oznaci igralca (ROI naj bo majhen in informativen)');
+[x, y] = ginput(2);
+
+x = round(x); y = round(y);
+x1 = min(x); x2 = max(x);
+y1 = min(y); y2 = max(y);
+
+w = x2 - x1;
+h = y2 - y1;
+
+template = frameRGB(y1:y2, x1:x2, :);   % RGB template
+
+%% Parametri
+epsilon = 25;      
+numFrames = 150;   
+
+writer = VideoWriter('sledenje_L2_RGB.avi');
+open(writer);
+
+prevX = x1;
+prevY = y1;
+
+k = 1;
+while hasFrame(v)
+
+    frameRGB = readFrame(v);
+
+    bestDist = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    for dx = -epsilon:epsilon
+        for dy = -epsilon:epsilon
+            x = prevX + dx;
+            y = prevY + dy;
+
+            if x < 1 || y < 1 || ...
+               x+w > size(frameRGB,2) || ...
+               y+h > size(frameRGB,1)
+                continue;
+            end
+
+            patch = frameRGB(y:y+h, x:x+w, :);
+
+            diff = double(patch) - double(template);
+            dist = mean(diff(:).^2);    % L2 v RGB (normaliziran)
+
+            if dist < bestDist
+                bestDist = dist;
+                bestX = x;
+                bestY = y;
+            end
+        end
+    end
+
+    prevX = bestX;
+    prevY = bestY;
+
+    imshow(frameRGB); hold on;
+    rectangle('Position',[bestX bestY w h], 'EdgeColor','r','LineWidth',2);
+    hold off;
+
+    writeVideo(writer, getframe(gca));
+    k = k + 1;
+end
+
+close(writer);
+disp('L2 RGB sledenje koncano');
+==== END Adnan Halilović | Adnan Halilović_26670_assignsubmission_file | labvaja5_2_1.m ====
+
+==== BEGIN Adnan Halilović | Adnan Halilović_26670_assignsubmission_file | labvaja5_2_2.m ====
+%% Vaja 5 – 2.2: Sledenje igralca (Histogram + chi2) 
+clear; close all; clc;
+
+%% Branje videa
+videoFile = 'squash.avi';
+v = VideoReader(videoFile);
+
+frameRGB = read(v,1);
+frameGray = rgb2gray(frameRGB);
+
+figure(1);
+imshow(frameGray);
+title('Z dvema klikoma oznaci igralca');
+[x, y] = ginput(2);
+
+x = round(x); y = round(y);
+x1 = min(x); x2 = max(x);
+y1 = min(y); y2 = max(y);
+
+w = x2 - x1;
+h = y2 - y1;
+
+template = frameGray(y1:y2, x1:x2);
+
+%% Histogram značilnica
+numBins = 16;   % malo binov = stabilno
+templateHist = imhist(template, numBins);
+templateHist = templateHist / sum(templateHist);
+
+%% Parametri
+epsilon = 15;
+numFrames = 150;
+
+%% Izhodni video
+writer = VideoWriter('sledenje_histogram_simple.avi');
+open(writer);
+
+prevX = x1;
+prevY = y1;
+k = 1;
+
+%% Glavna zanka
+while hasFrame(v)
+    
+    frameRGB = read(v, k);
+    frameGray = rgb2gray(frameRGB);
+
+    bestDist = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    for dx = -epsilon:epsilon
+        for dy = -epsilon:epsilon
+            x = prevX + dx;
+            y = prevY + dy;
+
+            if x < 1 || y < 1 || ...
+               x+w > size(frameGray,2) || ...
+               y+h > size(frameGray,1)
+                continue;
+            end
+
+            patch = frameGray(y:y+h, x:x+w);
+            patchHist = imhist(patch, numBins);
+            patchHist = patchHist / sum(patchHist);
+
+            % chi2 razdalja
+            chi2 = sum((patchHist - templateHist).^2);
+
+            if chi2 < bestDist
+                bestDist = chi2;
+                bestX = x;
+                bestY = y;
+            end
+        end
+    end
+
+    prevX = bestX;
+    prevY = bestY;
+
+    figure(1);
+    imshow(frameRGB);
+    hold on;
+    rectangle('Position',[bestX bestY w h], ...
+              'EdgeColor','g', 'LineWidth', 2);
+    hold off;
+
+    F = getframe(gca);
+    writeVideo(writer, F);
+    k = k + 1;
+end
+
+close(writer);
+
+==== END Adnan Halilović | Adnan Halilović_26670_assignsubmission_file | labvaja5_2_2.m ====
+
+==== BEGIN Adnan Halilović | Adnan Halilović_26670_assignsubmission_file | labvaja5_3.m ====
+%% Vaja 5 – 2.3: Sledenje igralca (RGB histogram + Bhattacharyya)
+clear; close all; clc;
+
+v = VideoReader('squash.avi');
+
+frameRGB = readFrame(v);
+
+figure(1); imshow(frameRGB);
+title('Z dvema klikoma oznaci igralca');
+[x, y] = ginput(2);
+
+x = round(x); y = round(y);
+x1 = min(x); x2 = max(x);
+y1 = min(y); y2 = max(y);
+
+w = x2 - x1;
+h = y2 - y1;
+
+template = frameRGB(y1:y2, x1:x2, :);
+
+%% Histogram značilnica (RGB posebej)
+numBins = 16;
+templateHist = rgbHist(template, numBins);
+
+%% Parametri
+epsilon = 15;   
+alpha = 0.05;      % update histogram 
+
+
+writer = VideoWriter('sledenje_hist_bhatt_RGB.avi');
+open(writer);
+
+prevX = x1;
+prevY = y1;
+k = 1;
+
+while hasFrame(v) 
+    frameRGB = readFrame(v);
+
+    bestCost = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    for dx = -epsilon:epsilon
+        for dy = -epsilon:epsilon
+            x = prevX + dx;
+            y = prevY + dy;
+
+            if x < 1 || y < 1 || ...
+               x+w > size(frameRGB,2) || ...
+               y+h > size(frameRGB,1)
+                continue;
+            end
+
+            patch = frameRGB(y:y+h, x:x+w, :);
+            patchHist = rgbHist(patch, numBins);
+
+            % Bhattacharyya distance
+            bc = sum(sqrt(patchHist .* templateHist));
+            dist = 1 - bc;
+
+            % kazen za velike premike 
+            motionPenalty = 1e-4 * (dx^2 + dy^2);
+            cost = dist + motionPenalty;
+
+            if cost < bestCost
+                bestCost = cost;
+                bestX = x;
+                bestY = y;
+            end
+        end
+    end
+
+    prevX = bestX;
+    prevY = bestY;
+
+    % Posodabljanje histograma 
+    if alpha > 0
+        newPatch = frameRGB(bestY:bestY+h, bestX:bestX+w, :);
+        newHist = rgbHist(newPatch, numBins);
+        templateHist = (1-alpha)*templateHist + alpha*newHist;
+        templateHist = templateHist / sum(templateHist);
+    end
+
+    imshow(frameRGB); hold on;
+    rectangle('Position',[bestX bestY w h], 'EdgeColor','b','LineWidth',2);
+    hold off;
+
+    writeVideo(writer, getframe(gca));
+    k = k + 1;
+end
+
+close(writer);
+disp('Histogram Bhattacharyya (RGB) sledenje koncano');
+
+%% -------- lokalna funkcija --------
+function h = rgbHist(imgRGB, numBins)
+    imgRGB = uint8(imgRGB);
+
+    r = imgRGB(:,:,1);
+    g = imgRGB(:,:,2);
+    b = imgRGB(:,:,3);
+
+    hr = imhist(r, numBins);
+    hg = imhist(g, numBins);
+    hb = imhist(b, numBins);
+
+    h = double([hr; hg; hb]);
+    h = h / sum(h);
+end
+==== END Adnan Halilović | Adnan Halilović_26670_assignsubmission_file | labvaja5_3.m ====
+
+
+==== BEGIN Aleksander Rijavec & Amar Šaranović | Aleksander Rijavec_26680_assignsubmission_file + Amar Šaranović_26668_assignsubmission_file | vaja5.m ====
+%% Naloga 1
+videoDatoteka = 'Holywood.avi';
+vhodniVideo = VideoReader(videoDatoteka);
+okvirjiStevilo = vhodniVideo.NumFrames;
+
+% Inicializacija matrik za zmanjšane videe
+videoNN = cell(3, 1);
+videoBL_Brez = cell(3, 1);
+videoBL_Za = cell(3, 1);
+
+% Faktorji pomanjšanja
+manjsanje = [0.5, 0.25, 0.125];
+
+% Obdelava posameznih okvirjev
+for okvir = 1:okvirjiStevilo
+    trenutniOkvir = read(vhodniVideo, okvir);
+
+    % Najbližji sosed
+    for indeks = 1:length(manjsanje)
+        videoNN{indeks}(:,:,:,okvir) = imresize(trenutniOkvir, manjsanje(indeks), 'nearest');
+    end
+
+    % Bilinearno brez filtriranja
+    for indeks = 1:length(manjsanje)
+        videoBL_Brez{indeks}(:,:,:,okvir) = imresize(trenutniOkvir, manjsanje(indeks), 'bilinear', 'Antialiasing', false);
+    end
+
+    % Bilinearno s filtriranjem
+    for indeks = 1:length(manjsanje)
+        videoBL_Za{indeks}(:,:,:,okvir) = imresize(trenutniOkvir, manjsanje(indeks), 'bilinear', 'Antialiasing', true);
+    end
+end
+
+% Funkcija za shranjevanje videoposnetkov
+shranjevanjeVideov = @(okvirji, imeDatoteke) shraniVideo(okvirji, imeDatoteke, vhodniVideo.FrameRate);
+
+% Shranjevanje vseh pomanjšanih videoposnetkov
+imenDatotek = {'_Polovica', '_Cetrtina', '_Osmina'};
+for i = 1:3
+    shranjevanjeVideov(videoNN{i}, ['Video_NN', imenDatotek{i}, '.avi']);
+    shranjevanjeVideov(videoBL_Brez{i}, ['Video_BL_Brez', imenDatotek{i}, '.avi']);
+    shranjevanjeVideov(videoBL_Za{i}, ['Video_BL_Za', imenDatotek{i}, '.avi']);
+end
+
+% Funkcija za shranjevanje 
+function shraniVideo(okvirji, imeIzhoda, fps)
+    pisec = VideoWriter(imeIzhoda);
+    pisec.FrameRate = fps;
+    open(pisec);
+    writeVideo(pisec, uint8(okvirji));
+    close(pisec);
+end
+%% Naloga2.1
+video = VideoReader('squash.avi');
+allFrames = read(video, [1 Inf]);
+
+prviFrame = allFrames(:,:,:,1);
+figure;
+imshow(prviFrame);
+title('Kliknite 2 točki znotraj igralca (zgoraj levo, spodaj desno');
+
+[xKliki, yKliki] = ginput(2);
+% koordinate 
+% xKliki =
+% 
+%   109.8216
+%   120.8172
+% 
+% 
+% yKliki =
+% 
+%   121.2401
+%   128.4295
+
+
+% Izračun središč 
+xRdeci = xKliki(1) + (xKliki(2) - xKliki(1)) / 2;
+yRdeci = yKliki(1) + (yKliki(2) - yKliki(1)) / 2;
+
+% xBeli = xKliki(3) + (xKliki(4) - xKliki(3)) / 2;
+% yBeli = yKliki(3) + (yKliki(4) - yKliki(3)) / 2;
+
+% % Dimenzije izseka
+dxRdeci = floor(xKliki(2) - xKliki(1));
+dyRdeci = floor(yKliki(2) - yKliki(1));
+% 
+% dxBeli = floor(xKliki(4) - xKliki(3));
+% dyBeli = floor(yKliki(4) - yKliki(3));
+
+% Izsek igralca rdeči
+rdeciIgralec = prviFrame(yKliki(1):yKliki(1)+dyRdeci, xKliki(1):xKliki(1)+dxRdeci, :);
+
+% Izsek igralca beli
+%beliIgralec = prviFrame(yKliki(3):yKliki(3)+dyBeli, xKliki(3):xKliki(3)+dxBeli, :);
+
+% Območje iskanja
+epsilon = 20;
+
+oznaceniOkvirji = zeros(size(allFrames), 'uint8');
+
+for okvir = 2:size(allFrames, 4) %st okvirjev
+    trenutniFrame = allFrames(:,:,:,okvir);
+
+    % R- območje iskanja 
+    yMinR = max(1, round(yRdeci - epsilon));
+    yMaxR = min(size(trenutniFrame, 1), round(yRdeci + epsilon));
+    xMinR = max(1, round(xRdeci - epsilon));
+    xMaxR = min(size(trenutniFrame, 2), round(xRdeci + epsilon));
+
+    okolicaRdeci = trenutniFrame(yMinR:yMaxR, xMinR:xMaxR, :);
+    minDistanceR = inf;
+    %noviR = [1, 1];
+    for y = 1:size(okolicaRdeci, 1) - size(rdeciIgralec, 1) + 1 %število možnih premikov izseka
+        for x = 1:size(okolicaRdeci, 2) - size(rdeciIgralec, 2) + 1
+
+            izsek = okolicaRdeci(y:y+size(rdeciIgralec, 1)-1, x:x+size(rdeciIgralec, 2)-1, :);
+            distance = sum((double(izsek) - double(rdeciIgralec)).^2, 'all'); % Evklidska razdalja
+            
+            if distance < minDistanceR
+                minDistanceR = distance;
+                noviR = [x, y];
+            end
+        end
+    end
+    xRdeci = xMinR + noviR(1) - 1;
+    yRdeci = yMinR + noviR(2) - 1;
+
+    % % B- območje iskanja 
+    % yMinB = max(1, round(yBeli - epsilon));
+    % yMaxB = min(size(trenutniFrame, 1), round(yBeli + epsilon));
+    % xMinB = max(1, round(xBeli - epsilon));
+    % xMaxB = min(size(trenutniFrame, 2), round(xBeli + epsilon));
+    % 
+    % okolicaBeli = trenutniFrame(yMinB:yMaxB, xMinB:xMaxB, :);
+    % minDistanceB = inf;
+    % noviB = [1, 1];
+    % for y = 1:size(okolicaBeli, 1) - size(beliIgralec, 1) + 1
+    %     for x = 1:size(okolicaBeli, 2) - size(beliIgralec, 2) + 1
+    %         izsek = okolicaBeli(y:y+size(beliIgralec, 1)-1, x:x+size(beliIgralec, 2)-1, :);
+    %         distance = sum((double(izsek) - double(beliIgralec)).^2, 'all'); % Evklidska razdalja
+    %         if distance < minDistanceB
+    %             minDistanceB = distance;
+    %             noviB = [x, y];
+    %         end
+    %     end
+    % end
+    % xBeli = xMinB + noviB(1) - 1;
+    % yBeli = yMinB + noviB(2) - 1;
+
+    % Posodobitev izseka igralca beli
+    %beliIgralec = trenutniFrame(yBeli:yBeli+dyBeli, xBeli:xBeli+dxBeli, :);
+
+    % Označevanje obeh igralcev
+    oznaceniOkvirji(:,:,:,okvir) = insertShape(trenutniFrame, 'Circle', [xRdeci yRdeci 14], 'Color', {'red'});
+    %oznaceniOkvirji(:,:,:,okvir) = insertShape(oznaceniOkvirji(:,:,:,okvir), 'Circle',[xBeli yBeli 14], 'Color', {'white'});
+end
+
+% Shranjevanje označenega videa
+izhodniVideo = VideoWriter('video_sledenje_evk.avi');
+izhodniVideo.FrameRate = video.FrameRate;
+open(izhodniVideo);
+writeVideo(izhodniVideo, oznaceniOkvirji);
+close(izhodniVideo);
+
+%% Naloga2.2
+video = VideoReader('squash.avi');
+allFrames = read(video, [1 Inf]);
+frameSize = size(allFrames);
+
+imshow(allFrames(:,:,:,1));
+title('Kliknite 2 točki znotraj igralca (zgoraj levo, spodaj desno');
+
+[xKliki, yKliki] = ginput(2);
+% koordinate
+% xKliki =
+% 
+%   108.1300
+%   119.1256
+% 
+% 
+% yKliki =
+% 
+%   122.0859
+%   127.5837
+
+% Izračun središča igralca
+xRdeci = xKliki(1) + (xKliki(2) - xKliki(1)) / 2;
+yRdeci = yKliki(1) + (yKliki(2) - yKliki(1)) / 2;
+
+% Velikost izseka igralca
+dxRdeci = floor(xKliki(2) - xKliki(1));
+dyRdeci = floor(yKliki(2) - yKliki(1));
+
+% Izsek igralca- znacilka 
+znacilka = allFrames(yKliki(1):yKliki(2), xKliki(1):xKliki(2), :, 1);
+znacilka_gray = rgb2gray(znacilka);
+
+% Histogram značilke igralca
+igracHist = zeros(1, 9);
+for i = 1:size(znacilka_gray, 1)
+    for j = 1:size(znacilka_gray, 2)
+        bin = floor(znacilka_gray(i, j) / 32) + 1;
+        igracHist(bin) = igracHist(bin) + 1;
+    end
+end
+igracHist = igracHist / sum(igracHist);  % Normaliziran histogram
+
+% Parametri iskanja
+epsilon = 25;
+windowSize = [dyRdeci, dxRdeci];  % Velikost okna za iskanje
+trackedFrames = zeros(size(allFrames), 'uint8');
+
+% Sledenje skozi vse okvire
+for f = 1:size(allFrames, 4)
+    % Središče igralca in parametri iskanja
+    x1 = floor(xRdeci - epsilon / 2);
+    x2 = floor(xRdeci + epsilon / 2);
+    y1 = floor(yRdeci - epsilon / 2);
+    y2 = floor(yRdeci + epsilon / 2);
+    
+    % Preverjanje meja slike
+    x1 = max(1, x1);
+    x2 = min(frameSize(2), x2);
+    y1 = max(1, y1);
+    y2 = min(frameSize(1), y2);
+
+    % Sivi okvir trenutnega okvira
+    frames_gray = rgb2gray(allFrames(:,:,:,f));
+
+    % Iskanje najboljše ujemanje s histogrami
+    minDistance = inf;  % Začetna razdalja je zelo velika
+    
+    % Preiskovanje območja za najboljše ujemanje histogramov
+    for y = y1 : y2 - windowSize(1) + 1
+        for x = x1 : x2 - windowSize(2) + 1
+            patch = frames_gray(y:y+windowSize(1)-1, x:x+windowSize(2)-1);
+            
+            % Izračun histograma za trenutni izsek
+            trenutniHist = zeros(1, 9);
+            for i = 1:size(patch, 1)
+                for j = 1:size(patch, 2)
+                    bin = floor(patch(i, j) / 32) + 1;
+                    trenutniHist(bin) = trenutniHist(bin) + 1;
+                end
+            end
+            trenutniHist = trenutniHist / sum(trenutniHist);  % Normalizacija histogramu
+            
+            % Izračun kvadratne razdalje med histogramom igralca in trenutnim histogramom
+            distance = sum((igracHist - trenutniHist).^2);
+            
+            % Posodobitev najboljše točke
+            if distance < minDistance
+                minDistance = distance;
+                novi = [x, y];
+            end
+        end
+    end
+    
+    % Posodobitev središča igralca
+    xRdeci = novi(1) + floor(dxRdeci / 2);
+    yRdeci = novi(2) + floor(dyRdeci / 2);
+
+    % Označevanje igralca z rdečim krogom
+    trackedFrames(:,:,:,f) = insertShape(allFrames(:,:,:,f), 'Circle', [xRdeci, yRdeci, 16], 'Color', 'red', 'LineWidth', 1);
+end
+
+% Shranjevanje rezultata
+outputVideo = VideoWriter('video_sledenje_hi.avi');
+outputVideo.FrameRate = video.FrameRate;
+open(outputVideo);
+writeVideo(outputVideo, trackedFrames);
+close(outputVideo);
+%% naloga 3
+clear all
+video = VideoReader('squash.avi');
+allFrames = read(video, [1 Inf]);
+
+% Prikaz prvega okvirja in označitev igralcev
+prviFrame = allFrames(:,:,:,1);
+figure;
+imshow(prviFrame);
+title('Kliknite 2 točki znotraj igralca (zgoraj levo, spodaj desno');
+
+[xKliki, yKliki] = ginput(2);
+
+% Izračun središč za igralca rdeči
+xRdeci = xKliki(1) + (xKliki(2) - xKliki(1)) / 2;
+yRdeci = yKliki(1) + (yKliki(2) - yKliki(1)) / 2;
+
+% Dimenzije izseka igralca rdeči
+dxRdeci = floor(xKliki(2) - xKliki(1));
+dyRdeci = floor(yKliki(2) - yKliki(1));
+
+% Izsek igralca rdeči
+znacilka = prviFrame(yKliki(1):yKliki(1)+dyRdeci, xKliki(1):xKliki(1)+dxRdeci, :);
+
+% Območje iskanja
+epsilon = 20;
+
+oznaceniOkvirji = zeros(size(allFrames), 'uint8');
+
+for okvir = 2:size(allFrames, 4)
+    trenutniFrame = allFrames(:,:,:,okvir);
+
+    % R- območje iskanja
+    yMinR = max(1, round(yRdeci - epsilon));
+    yMaxR = min(size(trenutniFrame, 1), round(yRdeci + epsilon)); 
+    xMinR = max(1, round(xRdeci - epsilon));
+    xMaxR = min(size(trenutniFrame, 2), round(xRdeci + epsilon));
+
+    okolicaRdeci = trenutniFrame(yMinR:yMaxR, xMinR:xMaxR, :);
+    minDistance = inf;
+    for y = 1:size(okolicaRdeci, 1) - size(znacilka, 1) + 1
+        for x = 1:size(okolicaRdeci, 2) - size(znacilka, 2) + 1
+            izsek = okolicaRdeci(y:y+size(znacilka, 1)-1, x:x+size(znacilka, 2)-1, :);
+            diff = double(izsek) - double(znacilka);
+            distance = sum(diff(:).^2); % Evklidska razdalja
+
+            if distance < minDistance
+                minDistance = distance;
+                novi = [x, y];
+            end
+        end
+    end
+    xRdeci = xMinR + novi(1) - 1;
+    yRdeci = yMinR + novi(2) - 1;
+
+    % spreminjanje znacilke
+    znacilka = trenutniFrame(yRdeci:yRdeci+dyRdeci, xRdeci:xRdeci+dxRdeci, :);
+
+    % Označevanje igralca
+    oznaceniOkvirji(:,:,:,okvir) = insertShape(trenutniFrame, 'Circle', ...
+        [xRdeci yRdeci 14], 'Color', {'red'});
+end
+
+% Shranjevanje označenega videa
+izhodniVideo = VideoWriter('video_znacilka_evk.avi');
+izhodniVideo.FrameRate = video.FrameRate;
+open(izhodniVideo);
+writeVideo(izhodniVideo, oznaceniOkvirji);
+close(izhodniVideo);
+==== END Aleksander Rijavec & Amar Šaranović | Aleksander Rijavec_26680_assignsubmission_file + Amar Šaranović_26668_assignsubmission_file | vaja5.m ====
+
+
+==== BEGIN Alja Belinger | Alja Belinger_26671_assignsubmission_file | labvaja5_1.m ====
+%% RV vaja 5 – 1. naloga: Podvzorčenje slik
+% Primerjava treh metod interpolacije pri zmanjsevanju locljivosti
+
+clear;
+close all;
+clc;
+
+%% Branje videa
+videoFile = 'Holywood.avi';
+v = VideoReader(videoFile);
+
+frame = readFrame(v);
+
+figure;
+imshow(frame);
+title('Originalna slika');
+
+%% za kok zmansujemo
+scales = [1/2, 1/4, 1/8];
+
+%% Skupni figure
+figure;
+sgtitle('Primerjava metod interpolacije pri podvzorcenju');
+
+%% METODA najblizjega soseda
+disp('Metoda 1: Nearest Neighbor');
+
+for i = 1:length(scales)
+    s = scales(i);
+
+    img_nn = imresize(frame, s, 'nearest');
+
+    subplot(3,3,i);
+    imshow(img_nn);
+    title(['NN, faktor = ', num2str(s)]);
+    
+    % shranjevanje
+    imwrite(img_nn, ...
+        ['NN_scale_', num2str(s*100), '.png']);
+end
+
+%% METODA bilinearna interpolacija brez filtriranja
+disp('Metoda 2: Bilinear brez filtriranja');
+
+for i = 1:length(scales)
+    s = scales(i);
+
+    img_bl_noaa = imresize(frame, s, ...
+        'bilinear', 'Antialiasing', false);
+
+    subplot(3,3,i+3);
+    imshow(img_bl_noaa);
+    title(['BL brez AA, faktor = ', num2str(s)]);
+    
+    imwrite(img_bl_noaa, ...
+        ['BL_noAA_scale_', num2str(s*100), '.png']);
+end
+
+%% METODA z filtriranjom
+disp('Metoda 3: Bilinear s filtriranjem');
+
+for i = 1:length(scales)
+    s = scales(i);
+
+    img_bl_aa = imresize(frame, s, ...
+        'bilinear', 'Antialiasing', true);
+
+    subplot(3,3,i+6);
+    imshow(img_bl_aa);
+    title(['BL z AA, faktor = ', num2str(s)]);
+    
+    imwrite(img_bl_aa, ...
+        ['BL_AA_scale_', num2str(s*100), '.png']);
+end
+==== END Alja Belinger | Alja Belinger_26671_assignsubmission_file | labvaja5_1.m ====
+
+==== BEGIN Alja Belinger | Alja Belinger_26671_assignsubmission_file | labvaja5_2_1.m ====
+%% Vaja 5 – 2.1: Sledenje igralca (Evklidska razdalja v RGB, brez učenja)
+clear; close all; clc;
+
+v = VideoReader('squash.avi');
+
+frameRGB = readFrame(v);
+
+figure(1);
+imshow(frameRGB);
+title('Z dvema klikoma oznaci igralca (ROI naj bo majhen in informativen)');
+[x, y] = ginput(2);
+
+x = round(x); y = round(y);
+x1 = min(x); x2 = max(x);
+y1 = min(y); y2 = max(y);
+
+w = x2 - x1;
+h = y2 - y1;
+
+template = frameRGB(y1:y2, x1:x2, :);   % RGB template
+
+%% Parametri
+epsilon = 25;      % ce mamo hitre premike, dej vec k 10
+   
+
+writer = VideoWriter('sledenje_L2_RGB.avi');
+open(writer);
+
+prevX = x1;
+prevY = y1;
+
+k = 1;
+while hasFrame(v)
+
+    frameRGB = readFrame(v);
+
+    bestDist = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    for dx = -epsilon:epsilon
+        for dy = -epsilon:epsilon
+            x = prevX + dx;
+            y = prevY + dy;
+
+            if x < 1 || y < 1 || ...
+               x+w > size(frameRGB,2) || ...
+               y+h > size(frameRGB,1)
+                continue;
+            end
+
+            patch = frameRGB(y:y+h, x:x+w, :);
+
+            diff = double(patch) - double(template);
+            dist = mean(diff(:).^2);    % L2 v RGB (normaliziran)
+
+            if dist < bestDist
+                bestDist = dist;
+                bestX = x;
+                bestY = y;
+            end
+        end
+    end
+
+    prevX = bestX;
+    prevY = bestY;
+
+    imshow(frameRGB); hold on;
+    rectangle('Position',[bestX bestY w h], 'EdgeColor','r','LineWidth',2);
+    hold off;
+
+    writeVideo(writer, getframe(gca));
+    k = k + 1;
+end
+
+close(writer);
+==== END Alja Belinger | Alja Belinger_26671_assignsubmission_file | labvaja5_2_1.m ====
+
+==== BEGIN Alja Belinger | Alja Belinger_26671_assignsubmission_file | labvaja5_2_2.m ====
+%% Vaja 5 – 2.2: Histogram + chi2
+clear; close all; clc;
+
+%% Branje videa
+videoFile = 'squash.avi';
+v = VideoReader(videoFile);
+
+frameRGB = readFrame(v);
+frameGray = rgb2gray(frameRGB);
+
+figure(1);
+imshow(frameGray);
+title('Z dvema klikoma oznaci igralca');
+[x, y] = ginput(2);
+
+x = round(x); 
+y = round(y);
+x1 = min(x); 
+x2 = max(x);
+y1 = min(y); 
+y2 = max(y);
+
+w = x2 - x1;
+h = y2 - y1;
+
+template = frameGray(y1:y2, x1:x2);
+
+%% značilnica
+numBins = 16;
+templateHist = imhist(template, numBins);
+templateHist = templateHist / sum(templateHist);
+
+%% Parametri
+epsilon = 15;
+
+%% Izhodni video
+writer = VideoWriter('sledenje_histogram_simple.avi');
+open(writer);
+
+prevX = x1;
+prevY = y1;
+
+%% video
+figure(1);
+
+while hasFrame(v)
+    frameRGB = readFrame(v);
+    frameGray = rgb2gray(frameRGB);
+
+    bestDist = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    for dx = -epsilon:epsilon
+        for dy = -epsilon:epsilon
+            x = prevX + dx;
+            y = prevY + dy;
+
+            if x < 1 || y < 1 || ...
+               x+w > size(frameGray,2) || ...
+               y+h > size(frameGray,1)
+                continue;
+            end
+
+            patch = frameGray(y:y+h, x:x+w);
+            patchHist = imhist(patch, numBins);
+            patchHist = patchHist / sum(patchHist);
+
+            % chi2 razdalja
+            chi2 = sum((patchHist - templateHist).^2);
+
+            if chi2 < bestDist
+                bestDist = chi2;
+                bestX = x;
+                bestY = y;
+            end
+        end
+    end
+
+    prevX = bestX;
+    prevY = bestY;
+
+    imshow(frameRGB);
+    hold on;
+    rectangle('Position',[bestX bestY w h], ...
+              'EdgeColor','g', 'LineWidth', 2);
+    hold off;
+
+ 
+
+    F = getframe(gca);
+    writeVideo(writer, F);
+end
+
+close(writer);
+==== END Alja Belinger | Alja Belinger_26671_assignsubmission_file | labvaja5_2_2.m ====
+
+==== BEGIN Alja Belinger | Alja Belinger_26671_assignsubmission_file | labvaja5_3.m ====
+%% Vaja 5 – 2.3: Sledenje igralca (RGB histogram + Bhattacharyya)
+clear; close all; clc;
+
+v = VideoReader('squash.avi');
+
+frameRGB = readFrame(v);
+
+figure(1); imshow(frameRGB);
+title('Z dvema klikoma oznaci igralca');
+[x, y] = ginput(2);
+
+x = round(x); y = round(y);
+x1 = min(x); x2 = max(x);
+y1 = min(y); y2 = max(y);
+
+w = x2 - x1;
+h = y2 - y1;
+
+template = frameRGB(y1:y2, x1:x2, :);
+
+%% Histogram značilnica (RGB posebi)
+numBins = 16;
+templateHist = rgbHist(template, numBins);
+
+%% Parametri
+epsilon = 15;      % 7 je premal
+alpha = 0.05;      % updejti histogram
+
+
+writer = VideoWriter('sledenje_hist_bhatt_RGB.avi');
+open(writer);
+
+prevX = x1;
+prevY = y1;
+k = 1;
+
+while hasFrame(v) 
+    frameRGB = readFrame(v);
+
+    bestCost = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    for dx = -epsilon:epsilon
+        for dy = -epsilon:epsilon
+            x = prevX + dx;
+            y = prevY + dy;
+
+            if x < 1 || y < 1 || ...
+               x+w > size(frameRGB,2) || ...
+               y+h > size(frameRGB,1)
+                continue;
+            end
+
+            patch = frameRGB(y:y+h, x:x+w, :);
+            patchHist = rgbHist(patch, numBins);
+
+            % Bhattacharyya distance
+            bc = sum(sqrt(patchHist .* templateHist));
+            dist = 1 - bc;
+
+            % kazen za velike premike- mejhna)
+            motionPenalty = 1e-4 * (dx^2 + dy^2);
+            cost = dist + motionPenalty;
+
+            if cost < bestCost
+                bestCost = cost;
+                bestX = x;
+                bestY = y;
+            end
+        end
+    end
+
+    prevX = bestX;
+    prevY = bestY;
+
+    % Posodabljanje histograma 
+    if alpha > 0
+        newPatch = frameRGB(bestY:bestY+h, bestX:bestX+w, :);
+        newHist = rgbHist(newPatch, numBins);
+        templateHist = (1-alpha)*templateHist + alpha*newHist;
+        templateHist = templateHist / sum(templateHist);
+    end
+
+    imshow(frameRGB); hold on;
+    rectangle('Position',[bestX bestY w h], 'EdgeColor','b','LineWidth',2);
+    hold off;
+
+    writeVideo(writer, getframe(gca));
+    k = k + 1;
+end
+
+close(writer);
+disp('Histogram Bhattacharyya (RGB) sledenje koncano');
+
+%%funkcija lokalna
+function h = rgbHist(imgRGB, numBins)
+    imgRGB = uint8(imgRGB);
+
+    r = imgRGB(:,:,1);
+    g = imgRGB(:,:,2);
+    b = imgRGB(:,:,3);
+
+    hr = imhist(r, numBins);
+    hg = imhist(g, numBins);
+    hb = imhist(b, numBins);
+
+    h = double([hr; hg; hb]);
+    h = h / sum(h);
+end
+==== END Alja Belinger | Alja Belinger_26671_assignsubmission_file | labvaja5_3.m ====
+
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_26676_assignsubmission_file + Dunja Mihajlović_26679_assignsubmission_file | naloga1.m ====
+vid = VideoReader('Holywood.avi');
+
+% Skale i metode (3x3 = 9 videa)
+scales = [0.5, 0.25, 0.125];
+
+methods = {
+    struct('tag','nearest','method','nearest',  'aa',[]), struct('tag','bilinear_AAoff','method','bilinear', 'aa',false), struct('tag','bilinear_AAon','method','bilinear', 'aa',true)
+    };
+
+% Napravi 9 writer-a
+writers = cell(numel(scales), numel(methods));
+for s = 1:numel(scales)
+    for m = 1:numel(methods)
+        outFile = sprintf('%s_%g.avi', methods{m}.tag, scales(s));
+        vw = VideoWriter(outFile);
+        vw.FrameRate = vid.FrameRate;   % zadrži originalni FPS
+        open(vw);
+        writers{s,m} = vw;
+    end
+end
+
+% Obradi video frame po frame
+vid.CurrentTime = 0;
+while hasFrame(vid) %vrati video na pocetak i obradi frame po frame
+    frame = readFrame(vid);  % uint8 HxWx3
+
+    for s = 1:numel(scales)
+        scale = scales(s);
+
+        for m = 1:numel(methods)
+            meth = methods{m};
+
+            if strcmp(meth.method,'nearest')
+                frameSmall = imresize(frame, scale, 'nearest');
+            else
+                frameSmall = imresize(frame, scale, 'bilinear', 'Antialiasing', meth.aa);
+            end
+
+            writeVideo(writers{s,m}, frameSmall);
+        end
+    end
+end
+
+% Zatvori sve
+for s = 1:numel(scales)
+    for m = 1:numel(methods)
+        close(writers{s,m});
+    end
+end
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_26676_assignsubmission_file + Dunja Mihajlović_26679_assignsubmission_file | naloga1.m ====
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_26676_assignsubmission_file + Dunja Mihajlović_26679_assignsubmission_file | naloga22.m ====
+clear; clc; close all;
+
+
+videoFile = 'squash.avi';
+outFile   = 'squash_tracking_chi2.avi';
+
+numBins = 32;      % število binov histograma
+epsilon = 20;      % velikost lokalnega iskanja
+useGray = true;    % sivinski prostor
+
+
+vid = VideoReader(videoFile);
+writer = VideoWriter(outFile);
+open(writer);
+
+
+frame = readFrame(vid);
+
+if useGray
+    frameGray = rgb2gray(frame);
+else
+    frameGray = frame;
+end
+
+figure; imshow(frameGray);
+title('Z dvema klikoma označi igralca');
+[x, y] = ginput(2);
+
+x = round(x); 
+y = round(y);
+
+x0 = min(x); 
+y0 = min(y);
+w  = abs(x(2) - x(1));
+h  = abs(y(2) - y(1));
+
+template = frameGray(y0:y0+h, x0:x0+w);
+refHist = compute_hist(template, numBins);
+
+pos = [x0 y0];
+
+frameOut = insertShape(frame, 'Rectangle', [pos w h], ...
+    'Color', 'red', 'LineWidth', 2);
+writeVideo(writer, frameOut);
+
+while hasFrame(vid)
+
+    frame = readFrame(vid);
+
+    if useGray
+        frameGray = rgb2gray(frame);
+    else
+        frameGray = frame;
+    end
+
+    bestDist = inf;
+    bestPos  = pos;
+
+    for dx = -epsilon:epsilon
+        for dy = -epsilon:epsilon
+
+            xTest = pos(1) + dx;
+            yTest = pos(2) + dy;
+
+            if xTest < 1 || yTest < 1 || ...
+               xTest+w > size(frameGray,2) || ...
+               yTest+h > size(frameGray,1)
+                continue;
+            end
+
+            patch = frameGray(yTest:yTest+h, xTest:xTest+w);
+            patchHist = compute_hist(patch, numBins);
+
+            dist = chi2_distance(refHist, patchHist);
+
+            if dist < bestDist
+                bestDist = dist;
+                bestPos = [xTest yTest];
+            end
+        end
+    end
+
+    pos = bestPos;
+
+    frameOut = insertShape(frame, 'Rectangle', ...
+        [pos w h], 'Color', 'red', 'LineWidth', 2);
+    writeVideo(writer, frameOut);
+end
+
+close(writer);
+disp('Sledenje končano.');
+
+
+function h = compute_hist(img, numBins)
+    img = double(img);
+    h = histcounts(img(:), numBins, 'Normalization', 'probability');
+end
+
+function d = chi2_distance(h1, h2)
+    eps = 1e-10;
+    d = sum(((h1 - h2).^2) ./ (h1 + h2 + eps));
+end
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_26676_assignsubmission_file + Dunja Mihajlović_26679_assignsubmission_file | naloga22.m ====
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_26676_assignsubmission_file + Dunja Mihajlović_26679_assignsubmission_file | naloga3.m ====
+clear; clc; close all;
+
+
+videoFile = 'squash.avi';
+outFile   = 'squash_tracking_3.avi';
+
+numBins = 32;      % število binov histograma
+epsilon = 20;      % velikost lokalnega iskanja
+alpha   = 0.05;    % faktor učenja (ONLINE LEARNING)
+useGray = true;    % sivinski prostor
+
+
+vid = VideoReader(videoFile);
+writer = VideoWriter(outFile);
+open(writer);
+
+
+frame = readFrame(vid);
+
+if useGray
+    frameGray = rgb2gray(frame);
+else
+    frameGray = frame;
+end
+
+figure; imshow(frameGray);
+title('Z dvema klikoma označi igralca');
+[x, y] = ginput(2);
+
+x = round(x);
+y = round(y);
+
+x0 = min(x);
+y0 = min(y);
+w  = abs(x(2) - x(1));
+h  = abs(y(2) - y(1));
+
+template = frameGray(y0:y0+h, x0:x0+w);
+refHist = compute_hist(template, numBins);
+
+pos = [x0 y0];
+
+frameOut = insertShape(frame, 'Rectangle', [pos w h], ...
+    'Color', 'red', 'LineWidth', 2);
+writeVideo(writer, frameOut);
+
+
+while hasFrame(vid)
+
+    frame = readFrame(vid);
+
+    if useGray
+        frameGray = rgb2gray(frame);
+    else
+        frameGray = frame;
+    end
+
+    bestDist = inf;
+    bestPos  = pos;
+
+   
+    for dx = -epsilon:epsilon
+        for dy = -epsilon:epsilon
+
+            xTest = pos(1) + dx;
+            yTest = pos(2) + dy;
+
+            if xTest < 1 || yTest < 1 || ...
+               xTest+w > size(frameGray,2) || ...
+               yTest+h > size(frameGray,1)
+                continue;
+            end
+
+            patch = frameGray(yTest:yTest+h, xTest:xTest+w);
+            patchHist = compute_hist(patch, numBins);
+
+            dist = chi2_distance(refHist, patchHist);
+
+            if dist < bestDist
+                bestDist = dist;
+                bestPos = [xTest yTest];
+            end
+        end
+    end
+
+   
+    pos = bestPos;
+
+   
+    patch = frameGray(pos(2):pos(2)+h, pos(1):pos(1)+w);
+    currentHist = compute_hist(patch, numBins);
+
+    refHist = (1 - alpha) * refHist + alpha * currentHist;
+   
+    frameOut = insertShape(frame, 'Rectangle', ...
+        [pos w h], 'Color', 'green', 'LineWidth', 2);
+    writeVideo(writer, frameOut);
+end
+
+close(writer);
+disp('Sledenje s sprotnim učenjem končano.');
+
+
+
+function h = compute_hist(img, numBins)
+    img = double(img);
+    h = histcounts(img(:), numBins, 'Normalization', 'probability');
+end
+
+function d = chi2_distance(h1, h2)
+    eps = 1e-10;
+    d = sum(((h1 - h2).^2) ./ (h1 + h2 + eps));
+end
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_26676_assignsubmission_file + Dunja Mihajlović_26679_assignsubmission_file | naloga3.m ====
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_26676_assignsubmission_file + Dunja Mihajlović_26679_assignsubmission_file | naloga_2_1.m ====
+vid = VideoReader('squash.avi');
+
+% Prvi frame i ručno biranje pravougaonika
+firstFrame = readFrame(vid);
+figure; 
+imshow(firstFrame); 
+title('Klikni 2 ugla pravougaonika oko igraca');
+
+[x, y] = ginput(2);
+x = round(x); 
+y = round(y);
+
+x1 = max(1, min(x)); 
+x2 = min(size(firstFrame,2), max(x));
+y1 = max(1, min(y)); 
+y2 = min(size(firstFrame,1), max(y));
+
+w = x2 - x1 + 1;
+h = y2 - y1 + 1;
+
+% Pretvori u sivu i uzmi template
+if size(firstFrame,3) == 3
+    firstGray = rgb2gray(firstFrame);
+else
+    firstGray = firstFrame;
+end
+templ = double(firstGray(y1:y2, x1:x2));
+
+% Parametar lokalne pretrage (epsilon)
+eps = 6;  % podesi eksperimentalno
+
+% Izlazni video
+outFile = 'squash_track_L2.avi';
+vw = VideoWriter(outFile);
+vw.FrameRate = vid.FrameRate;
+open(vw);
+
+% Trenutna procjena pozicije (gornji lijevi ugao)
+px = x1;
+py = y1;
+
+% Vrati video na početak i obradi sve frameove
+vid.CurrentTime = 0;
+
+while hasFrame(vid)
+    frame = readFrame(vid);
+
+    % siva slika
+    if size(frame,3) == 3
+        gray = rgb2gray(frame);
+    else
+        gray = frame;
+    end
+    grayD = double(gray);
+
+    % Lokalno područje pretrage oko (px,py)
+    xs = max(1, px - eps);
+    ys = max(1, py - eps); %lijeva i gornja granica pretrage
+    xe = min(size(gray,2) - w + 1, px + eps);
+    ye = min(size(gray,1) - h + 1, py + eps); %desna i donja granica pretrage
+
+    bestD = inf; %najveca moguca udaljenost
+    bestX = px; 
+    bestY = py;
+
+    % Traži minimum L2 udaljenosti
+    for yy = ys:ye
+        for xx = xs:xe %xx i yy gdje bi igrac mogao biti u trenutnom frameu
+            patch = grayD(yy:yy+h-1, xx:xx+w-1); %patch je istih dimenzija kao moj odabrani templ
+            d = sum((patch(:) - templ(:)).^2);   % L2^2 (dovoljno, sqrt ne treba)
+            if d < bestD %trazenje najmanjeg d
+                bestD = d;
+                bestX = xx;
+                bestY = yy;
+            end
+        end
+    end
+
+    % Update pozicije
+    px = bestX;
+    py = bestY;
+
+    % Ucrtavanje pravougaonika
+    frameOut = insertShape(frame, 'Rectangle', [px py w h], 'LineWidth', 3);
+
+    writeVideo(vw, frameOut);
+end
+
+close(vw);
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_26676_assignsubmission_file + Dunja Mihajlović_26679_assignsubmission_file | naloga_2_1.m ====
+
+
+==== BEGIN Bine Sever | Bine Sever_26672_assignsubmission_file | Vaja5.m ====
+websave('Hollywood2.avi', 'http://vision.fe.uni-lj.si/classes/RV/vaje/vaja1/Holywood2-t00427-rgb.avi');
+websave('squash.avi', 'http://vision.fe.uni-lj.si/classes/RV/vaje/vaja4/squash.avi');
+%%
+%Histogram
+function H = hist(slika,nBins)
+    slika = double(slika) / 255;
+    R = slika(:,:,1);
+    G = slika(:,:,2);
+    B = slika(:,:,3);
+    
+    r_idx = ceil(R * nBins);
+    g_idx = ceil(G * nBins);
+    b_idx = ceil(B * nBins);
+    
+    r_idx(r_idx==0) = 1;
+    g_idx(g_idx==0) = 1;
+    b_idx(b_idx==0) = 1;
+    
+    H = zeros(nBins, nBins, nBins);
+    for i = 1:numel(R)
+        r = r_idx(i);
+        g = g_idx(i);
+        b = b_idx(i);
+        H(r,g,b) = H(r,g,b) + 1;
+    end
+    H = H/sum(H(:));
+end
+
+
+
+%%
+%%Naloga 1
+
+video_H = VideoReader("Hollywood2.avi");
+out_H2_nn = VideoWriter('Hollywood_2nn.avi');
+out_H4_nn = VideoWriter('Hollywood_4nn.avi');
+out_H8_nn = VideoWriter('Hollywood_8nn.avi');
+
+out_H2_B_On = VideoWriter('Hollywood_2B_On.avi');
+out_H4_B_On = VideoWriter('Hollywood_4B_On.avi');
+out_H8_B_On = VideoWriter('Hollywood_8B_On.avi');
+
+out_H2_B_Off = VideoWriter('Hollywood_2B_Off.avi');
+out_H4_B_Off = VideoWriter('Hollywood_4B_Off.avi');
+out_H8_B_Off = VideoWriter('Hollywood_8B_Off.avi');
+
+open(out_H2_nn);
+open(out_H4_nn);
+open(out_H8_nn);
+
+open(out_H2_B_On);
+open(out_H4_B_On);
+open(out_H8_B_On);
+
+open(out_H2_B_Off);
+open(out_H4_B_Off);
+open(out_H8_B_Off);
+
+
+for t = 1:video_H.NumFrames
+    frame = read(video_H,t);
+
+    frame_2_nn = imresize(frame,1/2,'nearest');
+    writeVideo(out_H2_nn,frame_2_nn);
+    frame_4_nn = imresize(frame,1/4,'nearest');
+    writeVideo(out_H4_nn,frame_4_nn);
+    frame_8_nn = imresize(frame,1/8,'nearest');
+    writeVideo(out_H8_nn,frame_8_nn);
+
+    frame_2_B_On = imresize(frame,1/2,'bilinear',"Antialiasing",true);
+    writeVideo(out_H2_B_On,frame_2_B_On);
+    frame_4_B_On = imresize(frame,1/4,'bilinear',"Antialiasing",true);
+    writeVideo(out_H4_B_On,frame_4_B_On);
+    frame_8_B_On = imresize(frame,1/8,'bilinear',"Antialiasing",true);
+    writeVideo(out_H8_B_On,frame_8_B_On);
+
+    frame_2_B_Off = imresize(frame,1/2,'bilinear',"Antialiasing",false);
+    writeVideo(out_H2_B_Off,frame_2_B_Off);
+    frame_4_B_Off = imresize(frame,1/4,'bilinear',"Antialiasing",false);
+    writeVideo(out_H4_B_Off,frame_4_B_Off);
+    frame_8_B_Off = imresize(frame,1/8,'bilinear',"Antialiasing",false);
+    writeVideo(out_H8_B_Off,frame_8_B_Off);
+end
+close(out_H2_nn)
+close(out_H4_nn)
+close(out_H8_nn)
+
+close(out_H2_B_On)
+close(out_H4_B_On)
+close(out_H8_B_On)
+
+close(out_H2_B_Off)
+close(out_H4_B_Off)
+close(out_H8_B_Off)
+
+%%
+%Naloga 2
+video = VideoReader("squash.avi");
+out = VideoWriter("squash_sledenje.avi");
+%sizeX = 8;
+%sizeY = 8;
+%x0 = 109;
+%y0 = 121;
+sizeX = 13;
+sizeY = 12;
+x0 = 105;
+y0 = 120;
+rect = [x0,y0, sizeX,sizeY];
+frame = read(video,1);
+izsek = imcrop(frame,rect);
+%subplot(1,2,1)
+%imshow(frame)
+%hold on
+%rectangle('Position', rect, 'EdgeColor', 'b', 'LineWidth', 1);
+%subplot(1,2,2)
+%imshow(izsek);
+%impixelinfo;
+R_izsek = izsek(:,:,1);
+G_izsek = izsek(:,:,2);
+B_izsek = izsek(:,:,3);
+x_size_izsek = size(izsek,2);
+y_size_izsek = size(izsek,1);
+
+rx = 20;
+ry = 20;
+%size_epsilonX = 40;
+%size_epsilonY = 40;
+size_epsilonX = 36;
+size_epsilonY = 36;
+%rectE = [84.5100  103.5100   99   99];
+%rectE = [rx+x0 ry+y0 size_epsilonY size_epsilonX];
+
+open(out);
+ x0_trenutni = x0;
+ y0_trenutni = y0;
+ 
+for  t = 1:video.NumFrames
+    frame = read(video,t);
+    offset_x = x0_trenutni-rx;
+    offset_y = y0_trenutni-ry;
+    rectE = [offset_x offset_y size_epsilonY size_epsilonX];
+    if numel(rectE) ~= 4
+        continue;   % skip this frame
+    end
+    epsilon = imcrop(frame,rectE);
+    R_epsilon = epsilon(:,:,1);
+    G_epsilon = epsilon(:,:,2);
+    B_epsilon = epsilon(:,:,3);
+
+    x_size_epsilon = size(epsilon,2);
+    y_size_epsilon = size(epsilon,1);
+    
+    %x_blocks = 1:x_size_izsek:x_size_epsilon;
+    %y_blocks = 1:y_size_izsek:y_size_epsilon;
+    x_blocks = 1:(x_size_epsilon - x_size_izsek + 1);
+    y_blocks = 1:(y_size_epsilon - y_size_izsek + 1);
+    
+    nx = numel(x_blocks);
+    ny = numel(y_blocks);
+
+    
+    dist = zeros(nx, ny);
+        for i = 1:nx
+            for j =  1:ny
+                xb = x_blocks(i);
+                yb = y_blocks(j);
+
+                R_block = R_epsilon(yb:yb+y_size_izsek-1,xb:xb+x_size_izsek-1);
+                G_block = G_epsilon(yb:yb+y_size_izsek-1,xb:xb+x_size_izsek-1);
+                B_block = B_epsilon(yb:yb+y_size_izsek-1,xb:xb+x_size_izsek-1);
+                
+                d = (double((R_block-R_izsek).^2 + (G_block-G_izsek).^2 + (B_block-B_izsek).^2));
+                dist(i,j) = sqrt(sum(d(:)));
+            end
+        end
+     [minVal,index] = min(dist,[],"All");
+     [ix, iy] = ind2sub(size(dist), index);
+     x0_trenutni = x_blocks(ix) + offset_x;
+     y0_trenutni = y_blocks(iy) + offset_y;
+
+     
+     
+     %izsek_najden = epsilon(y0_najden:y0_najden+y_size_izsek-1,x0_najden:x0_najden+x_size_izsek-1,:);
+     tezisce = [x0_trenutni+x_size_izsek/2 y0_trenutni+y_size_izsek/2];
+     imshow(frame)
+     r = 25;                        % isti polmer za vse
+     imshow(frame)
+     hold on
+     viscircles(tezisce, r, 'Color','r','LineWidth',1.5);
+     %hold on
+     %rectangle('Position', rectE, 'EdgeColor', 'b', 'LineWidth', 1);
+    
+     frame_tracked = getframe(gca);
+     hold off;
+     writeVideo(out,frame_tracked.cdata)    
+end
+close(out)
+
+
+%%
+%Naloga 3
+video = VideoReader("squash.avi");
+out = VideoWriter("squash_sledenje_hist.avi");
+sizeX = 13;
+sizeY = 12;
+x0 = 105;
+y0 = 120;
+rect = [x0,y0, sizeX,sizeY];
+frame = read(video,1);
+izsek = imcrop(frame,rect);
+%subplot(1,2,1)
+%imshow(frame)
+%hold on
+%rectangle('Position', rect, 'EdgeColor', 'b', 'LineWidth', 1);
+%subplot(1,2,2)
+%imshow(izsek);
+%impixelinfo;
+%R_izsek = izsek(:,:,1);
+%G_izsek = izsek(:,:,2);
+%B_izsek = izsek(:,:,3);
+x_size_izsek = size(izsek,2);
+y_size_izsek = size(izsek,1);
+
+
+nbins = 8;
+hist_izsek = hist(izsek,nbins);
+%hist_izesk_norm = hist_izsek/sum(hist_izsek(:));
+rx = 20;
+ry = 20;
+size_epsilonX = 50;
+size_epsilonY = 50;
+%rectE = [84.5100  103.5100   99   99];
+%rectE = [rx+x0 ry+y0 size_epsilonY size_epsilonX];
+
+open(out);
+ x0_trenutni = x0;
+ y0_trenutni = y0;
+ 
+for  t = 1:video.NumFrames
+    frame = read(video,t);
+    offset_x = x0_trenutni-rx;
+    offset_y = y0_trenutni-ry;
+    rectE = [offset_x offset_y size_epsilonY size_epsilonX];
+    if numel(rectE) ~= 4
+        continue;   % skip this frame
+    end
+    epsilon = imcrop(frame,rectE);
+    %R_epsilon = epsilon(:,:,1);
+    %G_epsilon = epsilon(:,:,2);
+    %B_epsilon = epsilon(:,:,3);
+
+    x_size_epsilon = size(epsilon,2);
+    y_size_epsilon = size(epsilon,1);
+    
+    %x_blocks = 1:x_size_izsek:x_size_epsilon;
+    %y_blocks = 1:y_size_izsek:y_size_epsilon;
+    x_blocks = 1:(x_size_epsilon - x_size_izsek + 1);
+    y_blocks = 1:(y_size_epsilon - y_size_izsek + 1);
+    
+    
+
+     nx = numel(x_blocks);
+     ny = numel(y_blocks);
+ 
+    
+    dist = zeros(nx, ny);
+        for i = 1:nx
+            for j =  1:ny
+                xb = x_blocks(i);
+                yb = y_blocks(j);
+                block = epsilon(yb:yb+y_size_izsek-1,xb:xb+x_size_izsek-1,:);
+                hist_block = hist(block,nbins);
+                hi2 = ((hist_block - hist_izsek).^2)./(hist_izsek+0.00001);
+                dist(i,j) = sum(hi2(:));
+            end
+        end
+     [minVal,index] = min(dist(:));
+     [ix, iy] = ind2sub(size(dist), index);
+     x0_trenutni = x_blocks(ix) + offset_x;
+     y0_trenutni = y_blocks(iy) + offset_y;
+     
+     %izsek_najden = epsilon(y0_najden:y0_najden+y_size_izsek-1,x0_najden:x0_najden+x_size_izsek-1,:);
+     tezisce = [x0_trenutni+x_size_izsek/2 y0_trenutni+y_size_izsek/2];
+     r = 25;                        % isti polmer za vse
+     imshow(frame)
+     hold on
+     viscircles(tezisce, r, 'Color','r','LineWidth',1.5);
+     %hold on
+     %rectangle('Position', rectE, 'EdgeColor', 'b', 'LineWidth', 1);
+    
+     frame_tracked = getframe(gca);
+     hold off;
+     writeVideo(out,frame_tracked.cdata)    
+end
+close(out)
+
+
+%%
+%Naloga 4a
+video = VideoReader("squash.avi");
+out = VideoWriter("squash_sledenje_evklid_ucenje.avi");
+sizeX = 8;
+sizeY = 8;
+x0 = 109;
+y0 = 121;
+rect = [x0,y0, sizeX,sizeY];
+frame = read(video,1);
+izsek = imcrop(frame,rect);
+%subplot(1,2,1)
+%imshow(frame)
+%hold on
+%rectangle('Position', rect, 'EdgeColor', 'b', 'LineWidth', 1);
+%subplot(1,2,2)
+%imshow(izsek);
+%impixelinfo;
+R_izsek = izsek(:,:,1);
+G_izsek = izsek(:,:,2);
+B_izsek = izsek(:,:,3);
+x_size_izsek = size(izsek,2);
+y_size_izsek = size(izsek,1);
+
+rx = 20;
+ry = 20;
+size_epsilonX = 50;
+size_epsilonY = 50;
+%rectE = [84.5100  103.5100   99   99];
+%rectE = [rx+x0 ry+y0 size_epsilonY size_epsilonX];
+
+open(out);
+ x0_trenutni = x0;
+ y0_trenutni = y0;
+ 
+for  t = 1:video.NumFrames
+    frame = read(video,t);
+    offset_x = x0_trenutni-rx;
+    offset_y = y0_trenutni-ry;
+
+    rect_trenutni = [x0_trenutni,y0_trenutni,sizeX,sizeY];
+   
+    rectE = [offset_x offset_y size_epsilonY size_epsilonX];
+    if (numel(rectE) ~= 4) || (numel(rect_trenutni)  ~= 4)
+        continue;   % skip this frame
+    end
+    
+    izsek_trenutni = imcrop(frame,rect_trenutni);
+    x_size_izsek = size(izsek_trenutni,2);
+    y_size_izsek = size(izsek_trenutni,1);
+
+
+    R_trenutni = izsek_trenutni(:,:,1);
+    G_trenutni = izsek_trenutni(:,:,2);
+    B_trenutni = izsek_trenutni(:,:,3);
+
+
+    epsilon = imcrop(frame,rectE);
+    R_epsilon = epsilon(:,:,1);
+    G_epsilon = epsilon(:,:,2);
+    B_epsilon = epsilon(:,:,3);
+
+    x_size_epsilon = size(epsilon,2);
+    y_size_epsilon = size(epsilon,1);
+    
+    %x_blocks = 1:x_size_izsek:x_size_epsilon;
+    %y_blocks = 1:y_size_izsek:y_size_epsilon;
+    x_blocks = 1:(x_size_epsilon - x_size_izsek + 1);
+    y_blocks = 1:(y_size_epsilon - y_size_izsek + 1);
+    
+    nx = numel(x_blocks);
+    ny = numel(y_blocks);
+
+    
+    dist = zeros(nx, ny);
+        for i = 1:nx
+            for j =  1:ny
+                xb = x_blocks(i);
+                yb = y_blocks(j);
+
+                R_block = R_epsilon(yb:yb+y_size_izsek-1,xb:xb+x_size_izsek-1);
+                G_block = G_epsilon(yb:yb+y_size_izsek-1,xb:xb+x_size_izsek-1);
+                B_block = B_epsilon(yb:yb+y_size_izsek-1,xb:xb+x_size_izsek-1);
+                
+                d = (double((R_block-R_trenutni).^2 + (G_block-G_trenutni).^2 + (B_block-B_trenutni).^2));
+                dist(i,j) = sqrt(sum(d(:)));
+            end
+        end
+     [minVal,index] = min(dist,[],"All");
+     [ix, iy] = ind2sub(size(dist), index);
+     x0_trenutni = x_blocks(ix) + offset_x;
+     y0_trenutni = y_blocks(iy) + offset_y;
+
+     
+     
+     %izsek_najden = epsilon(y0_najden:y0_najden+y_size_izsek-1,x0_najden:x0_najden+x_size_izsek-1,:);
+     tezisce = [x0_trenutni+x_size_izsek/2 y0_trenutni+y_size_izsek/2];
+     imshow(frame)
+     r = 25;                        % isti polmer za vse
+     imshow(frame)
+     hold on
+     viscircles(tezisce, r, 'Color','r','LineWidth',1.5);
+     %hold on
+     %rectangle('Position', rectE, 'EdgeColor', 'b', 'LineWidth', 1);
+    
+     frame_tracked = getframe(gca);
+     hold off;
+     writeVideo(out,frame_tracked.cdata)    
+end
+close(out)
+
+
+%%
+%Naloga 4b
+video = VideoReader("squash.avi");
+out = VideoWriter("squash_sledenje_hist_ucenje.avi");
+sizeX = 13;
+sizeY = 12;
+x0 = 105;
+y0 = 120;
+rect = [x0,y0, sizeX,sizeY];
+frame = read(video,1);
+izsek = imcrop(frame,rect);
+%subplot(1,2,1)
+%imshow(frame)
+%hold on
+%rectangle('Position', rect, 'EdgeColor', 'b', 'LineWidth', 1);
+%subplot(1,2,2)
+%imshow(izsek);
+impixelinfo;
+%R_izsek = izsek(:,:,1);
+%G_izsek = izsek(:,:,2);
+%B_izsek = izsek(:,:,3);
+x_size_izsek = size(izsek,2);
+y_size_izsek = size(izsek,1);
+
+
+nbins = 8;
+hist_izsek = hist(izsek,nbins);
+%hist_izesk_norm = hist_izsek/sum(hist_izsek(:));
+rx = 20;
+ry = 20;
+size_epsilonX = 50;
+size_epsilonY = 50;
+%rectE = [84.5100  103.5100   99   99];
+%rectE = [rx+x0 ry+y0 size_epsilonY size_epsilonX];
+
+open(out);
+ x0_trenutni = x0;
+ y0_trenutni = y0;
+ 
+for  t = 1:video.NumFrames
+    frame = read(video,t);
+    offset_x = x0_trenutni-rx;
+    offset_y = y0_trenutni-ry;
+    rect_trenutni = [x0_trenutni,y0_trenutni,sizeX,sizeY];
+   
+    rectE = [offset_x offset_y size_epsilonY size_epsilonX];
+    if (numel(rectE) ~= 4) || (numel(rect_trenutni)  ~= 4)
+        continue;   % skip this frame
+    end
+    
+    izsek_trenutni = imcrop(frame,rect_trenutni);
+    x_size_izsek = size(izsek_trenutni,2);
+    y_size_izsek = size(izsek_trenutni,1);
+    hist_izsek = hist(izsek_trenutni,nbins);
+
+    epsilon = imcrop(frame,rectE);
+    %R_epsilon = epsilon(:,:,1);
+    %G_epsilon = epsilon(:,:,2);
+    %B_epsilon = epsilon(:,:,3);
+
+    x_size_epsilon = size(epsilon,2);
+    y_size_epsilon = size(epsilon,1);
+    
+    %x_blocks = 1:x_size_izsek:x_size_epsilon;
+    %y_blocks = 1:y_size_izsek:y_size_epsilon;
+    x_blocks = 1:(x_size_epsilon - x_size_izsek + 1);
+    y_blocks = 1:(y_size_epsilon - y_size_izsek + 1);
+    
+    
+
+    nx = numel(x_blocks);
+    ny = numel(y_blocks);
+ 
+    
+    dist = zeros(nx, ny);
+        for i = 1:nx
+            for j =  1:ny
+                xb = x_blocks(i);
+                yb = y_blocks(j);
+                block = epsilon(yb:yb+y_size_izsek-1,xb:xb+x_size_izsek-1,:);
+                hist_block = hist(block,nbins);
+                hi2 = ((hist_block - hist_izsek).^2)./(hist_izsek+0.00001);
+                dist(i,j) = sum(hi2(:));
+            end
+        end
+     [minVal,index] = min(dist(:));
+     [ix, iy] = ind2sub(size(dist), index);
+     x0_trenutni = x_blocks(ix) + offset_x;
+     y0_trenutni = y_blocks(iy) + offset_y;
+     
+     %izsek_najden = epsilon(y0_najden:y0_najden+y_size_izsek-1,x0_najden:x0_najden+x_size_izsek-1,:);
+     tezisce = [x0_trenutni+x_size_izsek/2 y0_trenutni+y_size_izsek/2];
+     r = 25;                        % isti polmer za vse
+     imshow(frame)
+     hold on
+     viscircles(tezisce, r, 'Color','r','LineWidth',1.5);
+     %hold on
+     %rectangle('Position', rectE, 'EdgeColor', 'b', 'LineWidth', 1);
+    
+     frame_tracked = getframe(gca);
+     hold off;
+     writeVideo(out,frame_tracked.cdata)    
+end
+close(out)
+
+
+
+
+
+
+
+
+==== END Bine Sever | Bine Sever_26672_assignsubmission_file | Vaja5.m ====
+
+
+==== BEGIN Boris Jovanović | Boris Jovanović_28020_assignsubmission_file | RV_LV_5.m ====
+%% 1. DEL: Piramida ločljivosti (Holywood.avi)
+srcVideo = VideoReader('Holywood.avi');
+vRate = srcVideo.FrameRate;
+vFrames = srcVideo.NumFrames;
+scales = [0.5, 0.25, 0.125];
+suffixes = {'_half', '_quarter', '_eighth'};
+
+for s = 1:length(scales)
+    % Ustvarjanje objektov za zapisovanje
+    outNN = VideoWriter(['Res_NN' suffixes{s} '.avi']);
+    outBL = VideoWriter(['Res_BL' suffixes{s} '.avi']);
+    outBL_AA = VideoWriter(['Res_BL_AA' suffixes{s} '.avi']);
+    
+    open(outNN); open(outBL); open(outBL_AA);
+    
+    for f = 1:vFrames
+        img = read(srcVideo, f);
+        
+        % Nearest Neighbor
+        writeVideo(outNN, imresize(img, scales(s), 'nearest'));
+        
+        % Bilinear brez antialiasinga
+        writeVideo(outBL, imresize(img, scales(s), 'bilinear', 'Antialiasing', false));
+        
+        % Bilinear z antialiasingom
+        writeVideo(outBL_AA, imresize(img, scales(s), 'bilinear', 'Antialiasing', true));
+    end
+    
+    close(outNN); close(outBL); close(outBL_AA);
+end
+
+%% 2.1 DEL: Evklidska razdalja (L2) - Sledenje
+sqVideo = VideoReader('squash.avi');
+data = read(sqVideo);
+firstImg = data(:,:,:,1);
+
+% Ročna izbira tarče
+figure(1); imshow(firstImg); title('Označi igralca (pravokotnik)');
+rect = round(getrect()); % [x_min, y_min, width, height]
+templ = firstImg(rect(2):rect(2)+rect(4), rect(1):rect(1)+rect(3), :);
+
+% Trenutna pozicija (zgornji levi kot)
+currX = rect(1);
+currY = rect(2);
+searchRadius = 25;
+[h, w, ~] = size(templ);
+
+outL2 = VideoWriter('Sledenje_L2.avi');
+open(outL2);
+
+for i = 1:size(data, 4)
+    frame = data(:,:,:,i);
+    
+    % Določitev iskalnega okna
+    yRange = max(1, currY-searchRadius) : min(size(frame,1)-h, currY+searchRadius);
+    xRange = max(1, currX-searchRadius) : min(size(frame,2)-w, currX+searchRadius);
+    
+    bestDist = inf;
+    
+    for y = yRange
+        for x = xRange
+            patch = frame(y:y+h, x:x+w, :);
+            % Izračun L2 razdalje
+            dist = sum((double(patch) - double(templ)).^2, 'all');
+            
+            if dist < bestDist
+                bestDist = dist;
+                currX = x;
+                currY = y;
+            end
+        end
+    end
+    
+    % Vizualizacija s krogom v središču
+    resImg = insertShape(frame, 'Circle', [currX+w/2, currY+h/2, 15], 'Color', 'cyan', 'LineWidth', 3);
+    writeVideo(outL2, resImg);
+end
+close(outL2);
+
+%% 2.2 DEL: Barvni Histogrami
+% Uporabimo isto izbrano tarčo 'templ', a jo pretvorimo v sivinsko za hist.
+templGray = rgb2gray(templ);
+% Izračun referenčnega histograma (9 košov)
+refHist = histcounts(templGray, 0:32:256, 'Normalization', 'probability');
+
+outHist = VideoWriter('Sledenje_Hist.avi');
+open(outHist);
+
+% Ponastavimo pozicijo na začetno
+currX = rect(1); currY = rect(2);
+
+for i = 1:size(data, 4)
+    imgGray = rgb2gray(data(:,:,:,i));
+    
+    yRange = max(1, currY-searchRadius) : min(size(imgGray,1)-h, currY+searchRadius);
+    xRange = max(1, currX-searchRadius) : min(size(imgGray,2)-w, currX+searchRadius);
+    
+    minChi = inf;
+    
+    for y = yRange
+        for x = xRange
+            sub = imgGray(y:y+h, x:x+w);
+            hSub = histcounts(sub, 0:32:256, 'Normalization', 'probability');
+            
+            % Razdalja med histogrami (kvadratna razdalja)
+            d = sum((refHist - hSub).^2);
+            
+            if d < minChi
+                minChi = d;
+                currX = x;
+                currY = y;
+            end
+        end
+    end
+    
+    finalFrame = insertShape(data(:,:,:,i), 'FilledCircle', [currX+w/2, currY+h/2, 5], 'Color', 'yellow');
+    writeVideo(outHist, finalFrame);
+end
+close(outHist);
+
+%% 3. DEL: Sproti posodabljanje značilnice (Adaptivno sledenje)
+outAdapt = VideoWriter('Sledenje_Adaptivno.avi');
+open(outAdapt);
+
+% Začetni parametri
+currX = rect(1); currY = rect(2);
+dynamicTempl = templ; 
+
+for i = 1:size(data, 4)
+    frame = data(:,:,:,i);
+    
+    yR = max(1, currY-searchRadius) : min(size(frame,1)-h, currY+searchRadius);
+    xR = max(1, currX-searchRadius) : min(size(frame,2)-w, currX+searchRadius);
+    
+    bestD = inf;
+    for y = yR
+        for x = xR
+            p = frame(y:y+h, x:x+w, :);
+            d = sum((double(p) - double(dynamicTempl)).^2, 'all');
+            if d < bestD
+                bestD = d;
+                currX = x; currY = y;
+            end
+        end
+    end
+    
+    % POSODABLJANJE: Nova značilnica postane trenutno najdeni izsek
+    dynamicTempl = frame(currY:currY+h, currX:currX+w, :);
+    
+    res = insertShape(frame, 'Rectangle', [currX, currY, w, h], 'Color', 'green');
+    writeVideo(outAdapt, res);
+end
+close(outAdapt);
+==== END Boris Jovanović | Boris Jovanović_28020_assignsubmission_file | RV_LV_5.m ====
+
+
+==== BEGIN Domen Hauko | Domen Hauko_26689_assignsubmission_file | vaja05.m ====
+%% RV vaja 5
+%% 1. Podvzorčenje slik
+
+videoResize("Holywood.avi", "holywood/hw1_2_nearest.avi", 2, "nearest", true);
+videoResize("Holywood.avi", "holywood/hw1_4_nearest.avi", 4, "nearest", true);
+videoResize("Holywood.avi", "holywood/hw1_8_nearest.avi", 8, "nearest", true);
+videoResize("Holywood.avi", "holywood/hw1_2_anti.avi", 2, "bilinear", true);
+videoResize("Holywood.avi", "holywood/hw1_4_anti.avi", 4, "bilinear", true);
+videoResize("Holywood.avi", "holywood/hw1_8_anti.avi", 8, "bilinear", true);
+videoResize("Holywood.avi", "holywood/hw1_2_bilinear.avi", 2, "bilinear", false);
+videoResize("Holywood.avi", "holywood/hw1_4_bilinear.avi", 4, "bilinear", false);
+videoResize("Holywood.avi", "holywood/hw1_8_bilinear.avi", 8, "bilinear", false);
+function videoResize(inputFile, outputFile, resize_factor, method, antialias)
+
+    vr = VideoReader(inputFile);
+    vw = VideoWriter(outputFile);
+    vw.FrameRate = vr.FrameRate;
+    open(vw)
+
+    scale = 1 / resize_factor;
+
+    while hasFrame(vr)
+        frame = readFrame(vr);                % uint8
+        resized = imresize(frame, scale, method, ...
+                           "Antialiasing", antialias);
+        writeVideo(vw, resized);
+    end
+
+    close(vw);
+end
+
+%% 2. SQUASH
+
+%% 2.1 Evklidska razdalja
+
+squash = VideoReader("squash.avi");
+frame_squash = readFrame(squash);
+
+% Označimo enega igralca na prvem frame-u
+% Iščemo njegovo lokacijo v naslednjem frame-u,
+% z ničtim redom (igralec se ni premaknil izven okolice E)
+
+figure;
+imshow(frame_squash);
+title('Označi najprej rdečega in nato belega igralca');
+[igralec_red, rect_red] = imcrop(frame_squash);
+[igralec_white, rect_white] = imcrop(frame_squash);
+
+% VideoWriter, da naredimo video z rdečim pravokotnikom
+v_red = VideoWriter("squash_red_track.avi");
+v_red.FrameRate = squash.FrameRate;
+open(v_red);
+
+% Loop, ki gre čez naslednje frame-e
+while squash.hasFrame()
+    frame_new = readFrame(squash);
+
+    %   RDEČI IGRALEC
+
+    % E okolica, ki jo preverjamo: 3x3 večja
+    ref_x = rect_red(1);
+    ref_y = rect_red(2);
+    ref_w = rect_red(3);
+    ref_h = rect_red(4);
+
+    x_range = round(ref_x - 1*ref_w) : round(ref_x + 2*ref_w);
+    y_range = round(ref_y - 1*ref_h) : round(ref_y + 2*ref_h);
+
+    min_dist = inf;
+    new_x = 0;
+    new_y = 0;
+
+    for xe = 1:length(x_range)
+        for ye = 1:length(y_range)
+
+            % Error handling: če gre nov crop izven robov slike
+            [H, W, ~] = size(frame_new);
+
+            x = x_range(xe);
+            y = y_range(ye);
+            
+            if x < 1 || y < 1 || x+ref_w-1 > W || y+ref_h-1 > H
+                continue;
+            end
+
+            rect_new_red = [x, y, ref_w - 1, ref_h - 1];
+            frame_new_crop = imcrop(frame_new, rect_new_red);
+            evklid = evklidska_razdalja(igralec_red, frame_new_crop);
+
+            if evklid < min_dist
+                min_dist = evklid;
+                % Lokacija igralca
+                new_x = x;
+                new_y = y;
+            end
+        end 
+    end
+
+    % Nova pozicija igralca
+    best_x = new_x;
+    best_y = new_y;
+
+    rect_lokacija = [best_x best_y ref_w ref_h];
+    rect_red = rect_lokacija;   % update tracker
+    
+    frame_vis = insertShape(frame_new, ...
+        'Rectangle', rect_lokacija, ...
+        'Color', 'red', ...
+        'LineWidth', 3);
+
+    %   BELI IGRALEC
+
+    % E okolica, ki jo preverjamo: 3x3 večja
+    ref_x = rect_white(1);
+    ref_y = rect_white(2);
+    ref_w = rect_white(3);
+    ref_h = rect_white(4);
+
+    x_range = round(ref_x - 2*ref_w) : round(ref_x + 3*ref_w);
+    y_range = round(ref_y - 2*ref_h) : round(ref_y + 3*ref_h);
+
+    min_dist = inf;
+    new_x = ref_x;
+    new_y = ref_y;
+
+    for xe = 1:length(x_range)
+        for ye = 1:length(y_range)
+
+            % Error handling: če gre nov crop izven robov slike
+            [H, W, ~] = size(frame_new);
+
+            x = x_range(xe);
+            y = y_range(ye);
+            
+            if x < 1 || y < 1 || x+ref_w-1 > W || y+ref_h-1 > H
+                continue;
+            end
+
+            rect_new_white = [x, y, ref_w - 1, ref_h - 1];
+            frame_new_crop = imcrop(frame_new, rect_new_white);
+
+            evklid = evklidska_razdalja(igralec_white, frame_new_crop);
+        
+            if evklid < min_dist
+                min_dist = evklid;
+                % Lokacija igralca
+                new_x = x;
+                new_y = y;
+            end
+        end 
+    end
+    
+    % Nova lokacija igralca
+    best_x = new_x;
+    best_y = new_y;
+
+    rect_lokacija = [best_x best_y ref_w ref_h];
+    rect_white = rect_lokacija;   % update tracker
+    
+    frame_vis_both = insertShape(frame_vis, ...
+        'Rectangle', rect_lokacija, ...
+        'Color', 'blue', ...
+        'LineWidth', 3);
+    
+    writeVideo(v_red, frame_vis_both);
+end
+
+close(v_red);
+
+fprintf("Narejena evklidska razdalja!\n");
+
+function razlika = evklidska_razdalja(reference, new)
+    
+    % Evklidska razdalja
+    reference = double(reference(:));
+    new = double(new(:));
+    razlika = norm(reference - new, 2);
+
+end
+
+%% 2.2 Hi kvadrat razdalja
+
+
+function razlika = razlika_histogramov_hi_kvadrat(reference, new)
+    
+    % Hi kvadrat razdalja
+    reference = reference(:);
+    new = new(:);
+
+    eps_val = 1e-10;    % Prepreči deljenje z nič
+    razlika = 0.5 * sum((reference - new).^2 ./ (reference + new + eps_val));
+
+end
+
+
+% Funkcija naredi histogram podane slike v 4x4x4 bine
+function hist = histogram_igralca(image)
+
+    % Če je prazna slika, vrne prazen histogram
+    if isempty(image) || size(image,3) ~= 3
+    hist = zeros(4,4,4);
+    return;
+    end
+
+    % Bins
+    R = image(:,:,1);
+    G = image(:,:,2);
+    B = image(:,:,3);
+    
+    % Pretvorba v vektorje
+    R = double(R(:));
+    G = double(G(:));
+    B = double(B(:));
+    
+    nBins = 4;
+    R_bin = min(floor(R / 256 * nBins), nBins-1);
+    G_bin = min(floor(G / 256 * nBins), nBins-1);
+    B_bin = min(floor(B / 256 * nBins), nBins-1);
+    
+    hist_ref = zeros(nBins, nBins, nBins);
+    for i = 1:length(R_bin)
+        hist_ref(R_bin(i)+1, G_bin(i)+1, B_bin(i)+1) = ...
+            hist_ref(R_bin(i)+1, G_bin(i)+1, B_bin(i)+1) + 1;
+    end
+    
+    % Normalize reference histogram to sum to 1 (probability distribution)
+    hist = hist_ref / sum(hist_ref(:));
+end
+
+
+squash = VideoReader("squash.avi");
+frame_squash = readFrame(squash);
+
+% Označimo enega igralca na prvem frame-u
+% Iščemo njegovo lokacijo v naslednjem frame-u,
+% z ničtim redom (igralec se ni premaknil izven okolice E)
+
+figure;
+imshow(frame_squash);
+title("Hi kvadrat: Označi rdečega igralca!");
+[igralec_red, rect_red] = imcrop(frame_squash);
+
+% histogram igralcev
+hist_igralec_red = histogram_igralca(igralec_red);
+
+% VideoWriter, da naredimo video z rdečim pravokotnikom
+v_red = VideoWriter("squash_red_track_chi.avi");
+v_red.FrameRate = squash.FrameRate;
+open(v_red);
+
+% Loop, ki gre čez naslednje frame-e
+while squash.hasFrame()
+    frame_new = readFrame(squash);
+
+    %   RDEČI IGRALEC
+
+    ref_x = rect_red(1);
+    ref_y = rect_red(2);
+    ref_w = rect_red(3);
+    ref_h = rect_red(4);
+
+    x_range = round(ref_x - 1*ref_w) : round(ref_x + 2*ref_w);
+    y_range = round(ref_y - 1*ref_h) : round(ref_y + 2*ref_h);
+
+    min_dist = Inf;
+    new_x = ref_x;
+    new_y = ref_y;
+
+    for xe = 1:length(x_range)
+        for ye = 1:length(y_range)
+
+            % Error handling: če gre nov crop izven robov slike
+            [H, W, ~] = size(frame_new);
+
+            x = x_range(xe);
+            y = y_range(ye);
+            
+            if x < 1 || y < 1 || x+ref_w-1 > W || y+ref_h-1 > H
+                continue;
+            end
+
+            rect_new_red = [x, y, ref_w, ref_h];
+            frame_new_crop = imcrop(frame_new, rect_new_red);
+            
+            % Histogram nove pozicije (E okolica)
+            hist_new_frame_red = histogram_igralca(frame_new_crop);
+        
+            % Razlika histogramov prvi_frame - trenutni
+            chi_razlika = razlika_histogramov_hi_kvadrat(hist_igralec_red, hist_new_frame_red);
+            if chi_razlika < min_dist
+                min_dist = chi_razlika;
+                new_x = x;
+                new_y = y;
+            end
+
+        end 
+    end
+
+    % Nova pozicija igralca
+    best_x = new_x;
+    best_y = new_y;
+
+    rect_lokacija = [best_x best_y ref_w ref_h];
+    rect_red = rect_lokacija;   % update tracker
+    
+    frame_vis = insertShape(frame_new, ...
+        'Rectangle', rect_lokacija, ...
+        'Color', 'red', ...
+        'LineWidth', 3);
+    
+    writeVideo(v_red, frame_vis);
+end
+
+close(v_red);
+
+fprintf("Narejeno sledenje s hi kvadrat!\n");
+
+%% 3. Rdeči igralec, sprotno učenje in Hi kvadrat
+
+function hist = histogram_igralca_sivinski(image)
+
+    % Če je prazna slika, vrne prazen histogram
+    if isempty(image)
+        hist = zeros(256, 1);
+        return;
+    end
+
+    % Če je slika RGB, jo pretvori v sivinsko
+    if size(image,3) == 3
+        % Standardna luminančna pretvorba
+        image = 0.2989 * double(image(:,:,1)) + ...
+                0.5870 * double(image(:,:,2)) + ...
+                0.1140 * double(image(:,:,3));
+    else
+        image = double(image);
+    end
+
+    % Pretvorba v vektor
+    gray = image(:);
+
+    % Število binov
+    nBins = 8;
+
+    % Izračun binov
+    gray_bin = min(floor(gray / 256 * nBins), nBins-1);
+
+    % Histogram
+    hist_ref = zeros(nBins, 1);
+    for i = 1:length(gray_bin)
+        hist_ref(gray_bin(i) + 1) = hist_ref(gray_bin(i) + 1) + 1;
+    end
+
+    % Normalizacija (verjetnostna porazdelitev)
+    hist = hist_ref / sum(hist_ref);
+end
+
+function razlika = razlika_histogramov_hi_kvadrat_sivinski(reference, new)
+    
+    % Hi kvadrat razdalja
+    reference = reference(:);
+    new = new(:);
+
+    eps_val = 1e-10;    % Prepreči deljenje z nič
+    razlika = 0.5 * sum((reference - new).^2 ./ (reference + new + eps_val));
+
+end
+
+
+squash = VideoReader("squash.avi");
+frame_squash = readFrame(squash);
+
+% Označimo enega igralca na prvem frame-u
+% Iščemo njegovo lokacijo v naslednjem frame-u,
+% z ničtim redom (igralec se ni premaknil izven okolice E)
+
+figure;
+imshow(frame_squash);
+title("Hi kvadrat, sprotno učenje: označi rdečega igralca!");
+[igralec_red, rect_red] = imcrop(frame_squash);
+
+% histogram igralcev
+hist_igralec_red = histogram_igralca_sivinski(igralec_red);
+
+% VideoWriter, da naredimo video z rdečim pravokotnikom
+v_red = VideoWriter("squash_white_track_chi_learning.avi");
+v_red.FrameRate = squash.FrameRate;
+open(v_red);
+
+% Loop, ki gre čez naslednje frame-e
+while squash.hasFrame()
+    frame_new = readFrame(squash);
+
+    %   RDEČI IGRALEC
+    ref_x = rect_red(1);
+    ref_y = rect_red(2);
+    ref_w = rect_red(3);
+    ref_h = rect_red(4);
+
+    % E okolica
+    x_okolica = ref_x - 0.5*ref_w;
+    y_okolica = ref_y - 0.5*ref_h;
+    w_okolica = ref_w * 2;
+    h_okolica = ref_h * 2;
+
+    x_range = round(ref_x - 0.5*ref_w) : round(ref_x + 1.5*ref_w);
+    y_range = round(ref_y - 0.5*ref_h) : round(ref_y + 1.5*ref_h);
+
+    %D = inf(length(y_range), length(x_range));
+    min_dist = Inf;
+    best_x = ref_x;
+    best_y = ref_y;
+
+    for xe = 1:length(x_range)
+        for ye = 1:length(y_range)
+
+            % Error handling: če gre nov crop izven robov slike
+            [H, W, ~] = size(frame_new);
+
+            x = x_range(xe);
+            y = y_range(ye);
+            
+            if x < 1 || y < 1 || x+ref_w-1 > W || y+ref_h-1 > H
+                continue;
+            end
+
+            rect_new_red = [x, y, ref_w, ref_h];
+            frame_new_crop = imcrop(frame_new, rect_new_red);
+            
+            % Histogram nove pozicije (E okolica)
+            hist_new_frame_red = histogram_igralca_sivinski(frame_new_crop);
+        
+            % Razlika histogramov prvi_frame - trenutni
+            dist = razlika_histogramov_hi_kvadrat_sivinski(hist_igralec_red, hist_new_frame_red);
+
+            if dist < min_dist
+                min_dist = dist;
+                best_x = x;
+                best_y = y;
+                min_hist = hist_new_frame_red;
+            end
+
+        end 
+    end
+
+    % Nova lokacija igralca
+    rect_lokacija = [best_x best_y ref_w ref_h];
+
+    % Rišemo okolico
+    rect_okolica = [best_x - 0.5*ref_w, best_y - 0.5*ref_h, w_okolica, h_okolica];
+    rect_red = rect_lokacija;   % update tracker
+    hist_igralec_red = min_hist;  % update histogram - sprotno učenje
+    
+    frame_vis = insertShape(frame_new, ...
+        'Rectangle', rect_lokacija, ...
+        'Color', 'red', ...
+        'LineWidth', 3);
+    frame_vis_okolica = insertShape(frame_vis, ...
+        'Rectangle', rect_okolica, ...
+        'Color', 'yellow', ...
+        'LineWidth', 3);
+
+    
+    writeVideo(v_red, frame_vis_okolica);
+end
+
+close(v_red);
+
+fprintf("Narejeno sprotno učenje s hi kvadratom!\n");
+==== END Domen Hauko | Domen Hauko_26689_assignsubmission_file | vaja05.m ====
+
+
+==== BEGIN Filip Kocjančič & VALENTIN NEMANIČ | Filip Kocjančič_26673_assignsubmission_file + VALENTIN NEMANIČ_26682_assignsubmission_file | Vaja5_min_rgb_sp.m ====
+%% RV_Vaja5
+%% 1) Podvzorcenje
+clear;
+
+v = VideoReader("Holywood.avi");
+V = read(v, [1 Inf]);
+
+scales = [1/2 1/4 1/8];
+
+% 1) nearest
+for s = scales
+    Vout = zeros(max(1,round(size(V,1)*s)), max(1,round(size(V,2)*s)), 3, size(V,4), "like", V);
+    for i = 1:size(V,4)
+        Vout(:,:,:,i) = imresize(V(:,:,:,i), s, "nearest");
+    end
+    w = VideoWriter(sprintf("nearest_%g.avi", s));
+    open(w); writeVideo(w, Vout); close(w);
+end
+
+% 2) bilinear (antialiasing off)
+for s = scales
+    Vout = zeros(max(1,round(size(V,1)*s)), max(1,round(size(V,2)*s)), 3, size(V,4), "like", V);
+    for i = 1:size(V,4)
+        Vout(:,:,:,i) = imresize(V(:,:,:,i), s, "bilinear", "Antialiasing", false);
+    end
+    w = VideoWriter(sprintf("bilinear_noAA_%g.avi", s));
+    open(w); writeVideo(w, Vout); close(w);
+end
+
+% 3) bilinear (antialiasing on)
+for s = scales
+    Vout = zeros(max(1,round(size(V,1)*s)), max(1,round(size(V,2)*s)), 3, size(V,4), "like", V);
+    for i = 1:size(V,4)
+        Vout(:,:,:,i) = imresize(V(:,:,:,i), s, "bilinear", "Antialiasing", true);
+    end
+    w = VideoWriter(sprintf("bilinear_AA_%g.avi", s));
+    open(w); writeVideo(w, Vout); close(w);
+end
+
+
+%% Skupna izbira obmocja (1x) z eno tocko:
+clear;
+
+v = VideoReader("squash.avi");
+V0 = read(v, [1 Inf]);
+
+H = size(V0,1); W = size(V0,2); N = size(V0,4);
+
+first = V0(:,:,:,1);
+imshow(first);
+p = ginput(1);
+close;
+
+half = 4;                 % okolica (če je 2 dela tudi sprotno sledenje)
+w0 = 2*half; h0 = 2*half; 
+x0 = round(p(1) - half);
+y0 = round(p(2) - half);
+
+x0 = min(max(x0,1), W-w0);
+y0 = min(max(y0,1), H-h0);
+
+epsilon = 16;
+marker = 8;
+
+nbins = 8;
+binw = 256/nbins;
+
+
+%% 2.1) Predloga + Evklidska razdalja (L2) na RGB
+V = V0;
+
+x = x0; y = y0; w = w0; h = h0;
+tmpl = double(V( y:y+h, x:x+w, :, 1));
+
+for i = 1:N
+    frame = V(:,:,:,i);
+
+    bestD = inf;
+    bestx = x;
+    besty = y;
+
+    x1 = max(1, x - epsilon); x2 = min(W-w, x + epsilon);
+    y1 = max(1, y - epsilon); y2 = min(H-h, y + epsilon);
+
+    for xx = x1:x2
+        for yy = y1:y2
+            patch = double(frame(yy:yy+h, xx:xx+w, :));
+            d = sqrt(sum((patch(:) - tmpl(:)).^2));
+            if d < bestD
+                bestD = d;
+                bestx = xx;
+                besty = yy;
+            end
+        end
+    end
+
+    x = bestx; y = besty;
+
+    cx = round(x + w/2);
+    cy = round(y + h/2);
+
+    r1 = max(1, cy-floor(marker/2)); r2 = min(H, cy+floor(marker/2));
+    c1 = max(1, cx-floor(marker/2)); c2 = min(W, cx+floor(marker/2));
+
+    V(r1:r2, c1:c2, 1, i) = 0;
+    V(r1:r2, c1:c2, 2, i) = 0;
+    V(r1:r2, c1:c2, 3, i) = 255;
+end
+
+wrt = VideoWriter("evklidska_razdalja.avi");
+open(wrt); writeVideo(wrt, V); close(wrt);
+
+
+%% 2.2) RGB histogram (3D) + vsota kvadratov razlik binov
+V = V0;
+
+x = x0; y = y0; w = w0; h = h0;
+
+tmplPatch = double(V(y:y+h, x:x+w, :, 1));
+histRef = zeros(nbins, nbins, nbins);
+
+for a = 1:size(tmplPatch,1)
+    for b = 1:size(tmplPatch,2)
+        rr = floor(tmplPatch(a,b,1)/binw) + 1;
+        gg = floor(tmplPatch(a,b,2)/binw) + 1;
+        bb = floor(tmplPatch(a,b,3)/binw) + 1;
+        rr = min(max(rr,1),nbins);
+        gg = min(max(gg,1),nbins);
+        bb = min(max(bb,1),nbins);
+        histRef(rr,gg,bb) = histRef(rr,gg,bb) + 1;
+    end
+end
+
+for i = 1:N
+    frame = double(V(:,:,:,i));
+
+    bestD = inf;
+    bestx = x;
+    besty = y;
+
+    x1 = max(1, x - epsilon); x2 = min(W-w, x + epsilon);
+    y1 = max(1, y - epsilon); y2 = min(H-h, y + epsilon);
+
+    for xx = x1:x2
+        for yy = y1:y2
+            patch = frame(yy:yy+h, xx:xx+w, :);
+
+            h2 = zeros(nbins, nbins, nbins);
+            for a = 1:size(patch,1)
+                for b = 1:size(patch,2)
+                    rr = floor(patch(a,b,1)/binw) + 1;
+                    gg = floor(patch(a,b,2)/binw) + 1;
+                    bb = floor(patch(a,b,3)/binw) + 1;
+                    rr = min(max(rr,1),nbins);
+                    gg = min(max(gg,1),nbins);
+                    bb = min(max(bb,1),nbins);
+                    h2(rr,gg,bb) = h2(rr,gg,bb) + 1;
+                end
+            end
+
+            d = sum((h2(:) - histRef(:)).^2);
+
+            if d < bestD
+                bestD = d;
+                bestx = xx;
+                besty = yy;
+            end
+        end
+    end
+
+    x = bestx; y = besty;
+
+    cx = round(x + w/2);
+    cy = round(y + h/2);
+
+    r1 = max(1, cy-floor(marker/2)); r2 = min(H, cy+floor(marker/2));
+    c1 = max(1, cx-floor(marker/2)); c2 = min(W, cx+floor(marker/2));
+
+    V(r1:r2, c1:c2, 1, i) = 0;
+    V(r1:r2, c1:c2, 2, i) = 255;
+    V(r1:r2, c1:c2, 3, i) = 0;
+end
+
+wrt = VideoWriter("mera_podobnosti.avi");
+open(wrt); writeVideo(wrt, V); close(wrt);
+
+
+%% 3.1) Sprotno ucenje: predloga (RGB) se posodobi na vsaki sliki
+V = V0;
+
+x = x0; y = y0; w = w0; h = h0;
+tmpl = double(V( y:y+h, x:x+w, :, 1));
+
+for i = 1:N
+    frame = V(:,:,:,i);
+
+    bestD = inf;
+    bestx = x;
+    besty = y;
+
+    x1 = max(1, x - epsilon); x2 = min(W-w, x + epsilon);
+    y1 = max(1, y - epsilon); y2 = min(H-h, y + epsilon);
+
+    for xx = x1:x2
+        for yy = y1:y2
+            patch = double(frame(yy:yy+h, xx:xx+w, :));
+            d = sqrt(sum((patch(:) - tmpl(:)).^2));
+            if d < bestD
+                bestD = d;
+                bestx = xx;
+                besty = yy;
+            end
+        end
+    end
+
+    x = bestx; y = besty;
+
+    tmpl = double(frame(y:y+h, x:x+w, :));
+
+    cx = round(x + w/2);
+    cy = round(y + h/2);
+
+    r1 = max(1, cy-floor(marker/2)); r2 = min(H, cy+floor(marker/2));
+    c1 = max(1, cx-floor(marker/2)); c2 = min(W, cx+floor(marker/2));
+
+    V(r1:r2, c1:c2, 1, i) = 0;
+    V(r1:r2, c1:c2, 2, i) = 0;
+    V(r1:r2, c1:c2, 3, i) = 255;
+end
+
+wrt = VideoWriter("evklidska_razdalja_sprotno_ucenje.avi");
+open(wrt); writeVideo(wrt, V); close(wrt);
+
+
+%% 3.2) Sprotno ucenje: RGB histogram se posodobi na vsaki sliki
+V = V0;
+
+x = x0; y = y0; w = w0; h = h0;
+
+tmplPatch = double(V(y:y+h, x:x+w, :, 1));
+histRef = zeros(nbins, nbins, nbins);
+for a = 1:size(tmplPatch,1)
+    for b = 1:size(tmplPatch,2)
+        rr = floor(tmplPatch(a,b,1)/binw) + 1;
+        gg = floor(tmplPatch(a,b,2)/binw) + 1;
+        bb = floor(tmplPatch(a,b,3)/binw) + 1;
+        rr = min(max(rr,1),nbins);
+        gg = min(max(gg,1),nbins);
+        bb = min(max(bb,1),nbins);
+        histRef(rr,gg,bb) = histRef(rr,gg,bb) + 1;
+    end
+end
+
+for i = 1:N
+    frame = double(V(:,:,:,i));
+
+    bestD = inf;
+    bestx = x;
+    besty = y;
+    bestHist = histRef;
+
+    x1 = max(1, x - epsilon); x2 = min(W-w, x + epsilon);
+    y1 = max(1, y - epsilon); y2 = min(H-h, y + epsilon);
+
+    for xx = x1:x2
+        for yy = y1:y2
+            patch = frame(yy:yy+h, xx:xx+w, :);
+
+            h2 = zeros(nbins, nbins, nbins);
+            for a = 1:size(patch,1)
+                for b = 1:size(patch,2)
+                    rr = floor(patch(a,b,1)/binw) + 1;
+                    gg = floor(patch(a,b,2)/binw) + 1;
+                    bb = floor(patch(a,b,3)/binw) + 1;
+                    rr = min(max(rr,1),nbins);
+                    gg = min(max(gg,1),nbins);
+                    bb = min(max(bb,1),nbins);
+                    h2(rr,gg,bb) = h2(rr,gg,bb) + 1;
+                end
+            end
+
+            d = sum((h2(:) - histRef(:)).^2);
+
+            if d < bestD
+                bestD = d;
+                bestx = xx;
+                besty = yy;
+                bestHist = h2;
+            end
+        end
+    end
+
+    x = bestx; y = besty;
+
+    histRef = bestHist;
+
+    cx = round(x + w/2);
+    cy = round(y + h/2);
+
+    r1 = max(1, cy-floor(marker/2)); r2 = min(H, cy+floor(marker/2));
+    c1 = max(1, cx-floor(marker/2)); c2 = min(W, cx+floor(marker/2));
+
+    V(r1:r2, c1:c2, 1, i) = 0;
+    V(r1:r2, c1:c2, 2, i) = 255;
+    V(r1:r2, c1:c2, 3, i) = 0;
+end
+
+wrt = VideoWriter("mera_podobnosti_sprotno_ucenje.avi");
+open(wrt); writeVideo(wrt, V); close(wrt);
+==== END Filip Kocjančič & VALENTIN NEMANIČ | Filip Kocjančič_26673_assignsubmission_file + VALENTIN NEMANIČ_26682_assignsubmission_file | Vaja5_min_rgb_sp.m ====
+
+
+==== BEGIN Gašper Lončar | Gašper Lončar_26685_assignsubmission_file | RVlab5.m ====
+%% 5 vaja 1. naloga
+% anti aliansing
+
+C=VideoReader('Holywood.avi');
+orig_okvirji=read(C,[1 Inf]);
+video_size=size(orig_okvirji);
+st_frameov=video_size(4);
+prvi_frame=orig_okvirji(:,:,:,1);
+
+skala=[0.5, 0.25, 0.125];
+visina = round(video_size(1)*skala(3));
+sirina = round(video_size(2)*skala(3));
+
+% prazna tabelca velikosti videa za število frameov
+skaliran_okvir = zeros(visina,sirina,3,st_frameov,'uint8'); 
+
+
+for i = 1:st_frameov
+   okvir = orig_okvirji(:,:,:,i);
+   %okvir = imresize(okvir,skala(1),'nearest',Antialiasing=false);
+   %okvir=imresize(okvir, skala(3),"bilinear",Antialiasing=false);
+   okvir=imresize(okvir,skala(3),"bilinear",Antialiasing=true);
+
+   skaliran_okvir(:,:,:,i) = okvir;
+end
+
+skaliran_video=VideoWriter('skaliran_video_AA3');
+skaliran_video.FrameRate = 25;
+open(skaliran_video);
+writeVideo(skaliran_video, skaliran_okvir);
+close(skaliran_video);
+
+%% 2. naloga - sledenje igralcema
+D=VideoReader('squash.avi');
+orig_okvirji=read(D,[1 Inf]);
+video_size=size(orig_okvirji);
+st_frameov=video_size(4);
+prvi_frame=orig_okvirji(:,:,:,1);
+
+% pogledaš vrednosti RGB na okvirju
+%figure; imshow(prvi_frame); impixelinfo; 
+
+figure; imshow(prvi_frame);
+[x,y] = ginput(2);
+
+
+x1 = round(min(x)); x2 = round(max(x));
+y1 = round(min(y)); y2 = round(max(y));
+
+znacilnica = prvi_frame(y1:y2, x1:x2, :);
+znacilnica_hsv = rgb2hsv(znacilnica);
+znacilnica_V = znacilnica_hsv(:,:,3);
+
+center_x = round((x1+x2)/2);
+center_y = round((y1+y2)/2);
+
+velikost_okolice = 12;   % velikost okolice
+%%Evklidska razdalja
+sivinska_znacilnica = rgb2gray(znacilnica);
+[visina_zna, sirina_zna] = size(sivinska_znacilnica);
+
+% figure;
+% imshow(znacilnica, []);
+
+evk_video = VideoWriter('sledenje_evk.avi');
+evk_video.FrameRate = 25;
+open(evk_video);
+
+for i = 1:st_frameov
+    okvir = orig_okvirji(:,:,:,i);
+    siv_okvir = rgb2gray(okvir);
+
+    opt_razdalja = Inf;
+    pozicija = [center_x center_y];
+
+    for razdalja_y = -velikost_okolice:velikost_okolice
+        for razdalja_x = -velikost_okolice:velikost_okolice
+            x0 = center_x + razdalja_x;
+            y0 = center_y + razdalja_y;
+
+            if x0 < 1 || y0 < 1 || x0+sirina_zna-1 > video_size(2) || y0+visina_zna-1 > video_size(1)
+                continue;
+            end
+
+            
+            kandidat = okvir(y0:y0+visina_zna-1, x0:x0+sirina_zna-1, :);
+            kandidat_hsv = rgb2hsv(kandidat);
+            kandidat_V = kandidat_hsv(:,:,3);
+            razlika = sum((double(kandidat_V(:)) - double(znacilnica_V(:))).^2);
+
+            if razlika < opt_razdalja
+                opt_razdalja = razlika;
+                pozicija = [x0 y0];
+            end
+        end
+    end
+
+    %posodobimo pozicijo
+    center_x = pozicija(1);
+    center_y = pozicija(2);
+
+    % označimo
+    okvir(center_y:center_y+visina_zna-1, center_x:center_x+visina_zna-1, :) = 255;
+
+    writeVideo(evk_video, okvir);
+end
+
+close(evk_video);
+
+% reset pozicije za 2. nacin
+center_x = round((x1+x2)/2);
+center_y = round((y1+y2)/2);
+
+%% kvadrat
+
+% sivinska značilnica
+znacilnica_siv = rgb2gray(znacilnica);
+
+nBin = 20;                      % dovolj, ni treba komplicirat
+ref_hist = imhist(znacilnica_siv, nBin);
+ref_hist = ref_hist / sum(ref_hist);   % normalizacija
+
+
+kvad_video = VideoWriter('sledenje_kvad.avi');
+kvad_video.FrameRate = 25;
+open(kvad_video);
+
+
+for i = 1:st_frameov
+    okvir = orig_okvirji(:,:,:,i);
+    siv_okvir = rgb2gray(okvir);
+
+    najboljsa_razdalja = Inf;
+    pozicija = [center_x center_y];
+
+    for dy = -velikost_okolice:velikost_okolice
+        for dx = -velikost_okolice:velikost_okolice
+
+            x0 = center_x + dx;
+            y0 = center_y + dy;
+
+            if x0 < 1 || y0 < 1 || ...
+               x0+sirina_zna-1 > video_size(2) || ...
+               y0+visina_zna-1 > video_size(1)
+                continue;
+            end
+
+            kandidat = siv_okvir(y0:y0+visina_zna-1, ...
+                                 x0:x0+sirina_zna-1);
+
+            % histogram kandidata
+            hist_kand = imhist(kandidat, nBin);
+            if sum(hist_kand) == 0
+                  continue;
+            end
+            hist_kand = hist_kand / sum(hist_kand);
+
+            % χ² razdalja
+            chi2 = sum( (hist_kand - ref_hist).^2 ./ ...
+                        (hist_kand + ref_hist + 1e-6) );
+
+            if chi2 < najboljsa_razdalja
+                najboljsa_razdalja = chi2;
+                pozicija = [x0 y0];
+            end
+        end
+    end
+
+    center_x = pozicija(1);
+    center_y = pozicija(2);
+
+
+    okvir(center_y:center_y+visina_zna-1, ...
+          center_x:center_x+sirina_zna-1, :) = 255;
+
+    writeVideo(kvad_video, okvir);
+end
+
+close(kvad_video);
+
+%% 3. NE DELA KOT BI MORALO, RAZMISLI ZAKAJ NE
+==== END Gašper Lončar | Gašper Lončar_26685_assignsubmission_file | RVlab5.m ====
+
+
+==== BEGIN Gregor Turk | Gregor Turk_26687_assignsubmission_file | vaja5.m ====
+%% Podvzorcenje slik - 9 verzij
+
+
+holywood = VideoReader("Holywood.avi");
+
+if ~exist("subsampled", "dir")
+    mkdir("subsampled");
+end
+
+% Writerji
+w_nn_2   = VideoWriter("subsampled/holywood_nn_polovica.avi");
+w_nn_4   = VideoWriter("subsampled/holywood_nn_cetrtina.avi");
+w_nn_8   = VideoWriter("subsampled/holywood_nn_osmina.avi");
+
+w_bl_2   = VideoWriter("subsampled/holywood_interp_polovica.avi");
+w_bl_4   = VideoWriter("subsampled/holywood_interp_cetrtina.avi");
+w_bl_8   = VideoWriter("subsampled/holywood_interp_osmina.avi");
+
+w_blaa_2 = VideoWriter("subsampled/holywood_interp_aa_polovica.avi");
+w_blaa_4 = VideoWriter("subsampled/holywood_interp_aa_cetrtina.avi");
+w_blaa_8 = VideoWriter("subsampled/holywood_interp_aa_osmina.avi");
+
+writers = {w_nn_2,w_nn_4,w_nn_8,w_bl_2,w_bl_4,w_bl_8,w_blaa_2,w_blaa_4,w_blaa_8};
+
+% odpri writerje, nastavi fps
+for k = 1:numel(writers)
+    writers{k}.FrameRate = holywood.FrameRate;
+    open(writers{k});
+end
+
+scales = [1/2, 1/4, 1/8];
+
+while hasFrame(holywood)
+    frameRGB = readFrame(holywood);
+
+    % 1) nearest neighbor
+    f_nn_2 = imresize(frameRGB, scales(1), "nearest");
+    f_nn_4 = imresize(frameRGB, scales(2), "nearest");
+    f_nn_8 = imresize(frameRGB, scales(3), "nearest");
+
+    % 2) bilinear, antialiasing OFF
+    f_bl_2 = imresize(frameRGB, scales(1), "bilinear", "Antialiasing", false);
+    f_bl_4 = imresize(frameRGB, scales(2), "bilinear", "Antialiasing", false);
+    f_bl_8 = imresize(frameRGB, scales(3), "bilinear", "Antialiasing", false);
+
+    % 3) bilinear, antialiasing ON
+    f_blaa_2 = imresize(frameRGB, scales(1), "bilinear", "Antialiasing", true);
+    f_blaa_4 = imresize(frameRGB, scales(2), "bilinear", "Antialiasing", true);
+    f_blaa_8 = imresize(frameRGB, scales(3), "bilinear", "Antialiasing", true);
+
+    % Zapis v 9 videov
+    writeVideo(w_nn_2, f_nn_2);
+    writeVideo(w_nn_4, f_nn_4);
+    writeVideo(w_nn_8, f_nn_8);
+
+    writeVideo(w_bl_2, f_bl_2);
+    writeVideo(w_bl_4, f_bl_4);
+    writeVideo(w_bl_8, f_bl_8);
+
+    writeVideo(w_blaa_2, f_blaa_2);
+    writeVideo(w_blaa_4, f_blaa_4);
+    writeVideo(w_blaa_8, f_blaa_8);
+end
+
+% Zapri writerje
+for k = 1:numel(writers)
+    close(writers{k});
+end
+
+%% 2 sledenje igralca
+
+
+squash = VideoReader("squash.avi");
+
+frame = rgb2gray(read(squash, 1));
+H = size(frame,1);
+W = size(frame,2);
+
+%figure;
+%imshow(frame);
+%impixelinfo;
+
+% 100,122 -> levo zgoraj
+% 115,121
+% 115,129 -> desno zgoraj
+znacilka = double(frame(118:130, 102:115));
+h_znacilka = size(znacilka,1);
+w_znacilka = size(znacilka,2);
+
+%figure;
+%imshow(znacilka);
+
+res_l2 = VideoWriter("tracking_evklidska.avi");
+res_l2.FrameRate = squash.FrameRate;   % enak fps kot original
+open(res_l2);
+
+squash = VideoReader("squash.avi");
+
+eps = 18;
+half_eps = floor(eps/2);
+position = [118,102];
+
+i = 1;
+while hasFrame(squash) %&& i < 150
+    frameRGB = readFrame(squash);
+    frame = double(rgb2gray(frameRGB));
+    
+    % pregledamo obmocje okrog igralca
+    y0 = max(1, position(1) - half_eps);
+    x0 = max(1, position(2) - half_eps);
+    y1 = min(H - h_znacilka + 1, position(1) + half_eps);
+    x1 = min(W - w_znacilka + 1, position(2) + half_eps);
+    
+    % L2 razdalja
+    best_l2 = inf;
+    best_pos = position;
+    for r = y0:y1
+        for c = x0:x1
+            patch = frame(r:r+h_znacilka-1, c:c+w_znacilka-1);
+
+            razlika = patch - znacilka;
+            l2 = sum(razlika(:).^2);
+            if l2 < best_l2
+                best_l2 = l2;
+                best_pos = [r,c];
+            end
+        end
+    end
+
+    % izris kvadrata
+    y_box = best_pos(1); x_box = best_pos(2);
+    w_box = w_znacilka; h_box = h_znacilka;
+
+    frameRGB = insertShape(frameRGB, "rectangle", [x_box, y_box, w_box, h_box], ...
+        "Color", "red", "LineWidth", 2);
+    frameRGB = insertShape(frameRGB, "rectangle", [x0, y0, (x1-x0+w_znacilka), (y1-y0+h_znacilka)], ...
+    "Color", "yellow", "LineWidth", 1);
+
+    position = best_pos;
+    i = i+1;
+    writeVideo(res_l2, frameRGB);
+end
+
+close(res_l2);
+
+
+%% 3 sledenje igralca - hi-kvadrat
+% histogram h kanala v HSV - iskali bomo rdecega to bo najbolje
+
+
+squash = VideoReader("squash.avi");
+
+frame = read(squash, 1);
+H = size(frame,1);
+W = size(frame,2);
+
+%figure;
+%imshow(frame);
+%impixelinfo;
+
+% 100,122 -> levo zgoraj
+% 115,121
+% 115,129 -> desno zgoraj
+znacilka = frame(120:133, 100:121, :);
+h_znacilka = size(znacilka,1);
+w_znacilka = size(znacilka,2);
+
+locljivost_hist = 32;
+hist_znacilka = histogramH(znacilka, locljivost_hist);
+
+%figure;
+%imshow(znacilka);
+
+res_hi = VideoWriter("tracking_hi2.avi");
+res_hi.FrameRate = squash.FrameRate;   % enak fps kot original
+open(res_hi);
+
+squash = VideoReader("squash.avi");
+
+eps = 20;
+half_eps = floor(eps/2);
+position = [120,100];
+
+i = 1;
+while hasFrame(squash) %&& i < 150
+    frameRGB = readFrame(squash);
+    
+    % pregledamo obmocje okrog igralca
+    y0 = max(1, position(1) - half_eps);
+    x0 = max(1, position(2) - half_eps);
+    y1 = min(H - h_znacilka + 1, position(1) + half_eps);
+    x1 = min(W - w_znacilka + 1, position(2) + half_eps);
+   
+    % hi razdalja
+    best_hi = inf;
+    best_pos = position;
+    for r = y0:y1
+        for c = x0:x1
+            patch = frameRGB(r:r+h_znacilka-1, c:c+w_znacilka-1,:);
+            hist_patch = histogramH(patch, locljivost_hist);
+
+            razlika = hist_patch - hist_znacilka;
+            hi = sum((razlika.^2) ./ (hist_patch + hist_znacilka + 1e-12));
+            if hi < best_hi
+                best_hi = hi;
+                best_pos = [r,c];
+            end
+        end
+    end
+
+    % izris pravokotnika
+    y_box = best_pos(1); x_box = best_pos(2);
+    w_box = w_znacilka; h_box = h_znacilka;
+
+    frameRGB = insertShape(frameRGB, "rectangle", [x_box, y_box, w_box, h_box], ...
+        "Color", "red", "LineWidth", 2);
+    frameRGB = insertShape(frameRGB, "rectangle", [x0, y0, (x1-x0+w_znacilka), (y1-y0+h_znacilka)], ...
+    "Color", "yellow", "LineWidth", 1);
+
+    position = best_pos;
+    i = i+1;
+    writeVideo(res_hi, frameRGB);
+end
+
+close(res_hi);
+
+
+
+%% 4. sprotno ucenje
+
+
+squash = VideoReader("squash.avi");
+
+frame = read(squash, 1);
+H = size(frame,1);
+W = size(frame,2);
+
+%figure;
+%imshow(frame);
+%impixelinfo;
+
+% 100,122 -> levo zgoraj
+% 115,121
+% 115,129 -> desno zgoraj
+znacilka = frame(120:133, 110:120, :);
+h_znacilka = size(znacilka,1);
+w_znacilka = size(znacilka,2);
+
+locljivost_hist = 32;
+hist_znacilka = histogramH(znacilka, locljivost_hist);
+hist_novi = hist_znacilka; % rabil ga bom kasneje za sprotno posodabljanje histograma
+
+%figure;
+%imshow(znacilka);
+
+res_ucenje = VideoWriter("tracking_ucenje.avi");
+res_ucenje.FrameRate = squash.FrameRate;   % enak fps kot original
+open(res_ucenje);
+
+squash = VideoReader("squash.avi");
+
+eps = 10;
+half_eps = floor(eps/2);
+position = [120,110];
+
+i = 1;
+while hasFrame(squash) %&& i < 150
+    frameRGB = readFrame(squash);
+    
+    % pregledamo obmocje okrog igralca
+    y0 = max(1, position(1) - half_eps);
+    x0 = max(1, position(2) - half_eps);
+    y1 = min(H - h_znacilka + 1, position(1) + half_eps);
+    x1 = min(W - w_znacilka + 1, position(2) + half_eps);
+   
+    % hi razdalja
+    best_hi = inf;
+    best_pos = position;
+    hist_znacilka = hist_novi;
+    for r = y0:y1
+        for c = x0:x1
+            patch = frameRGB(r:r+h_znacilka-1, c:c+w_znacilka-1,:);
+            hist_patch = histogramH(patch, locljivost_hist);
+
+            razlika = hist_patch - hist_znacilka;
+            hi = sum((razlika.^2) ./ (hist_patch + hist_znacilka + 1e-12));
+            if hi < best_hi
+                best_hi = hi;
+                best_pos = [r,c];
+                hist_novi = hist_patch;
+            end
+        end
+    end
+    
+    % izris pravokotnika
+    y_box = best_pos(1); x_box = best_pos(2);
+    w_box = w_znacilka; h_box = h_znacilka;
+
+    frameRGB = insertShape(frameRGB, "rectangle", [x_box, y_box, w_box, h_box], ...
+        "Color", "red", "LineWidth", 2);
+    frameRGB = insertShape(frameRGB, "rectangle", [x0, y0, (x1-x0+w_znacilka), (y1-y0+h_znacilka)], ...
+    "Color", "yellow", "LineWidth", 1);
+
+    position = best_pos;
+    hist_znacilka = hist_novi; % namesto znacilke na zacetku vzamem zadnji histogram
+    i = i+1;
+    writeVideo(res_ucenje, frameRGB);
+end
+
+close(res_ucenje);
+
+%%
+
+function hist = histogramH(img, locljivost)
+
+    slikaHSV = rgb2hsv(img);
+    H = slikaHSV(:,:,1); % H od 0 do 1
+    height = size(H,1);
+    width = size(H,2);
+
+    hist = zeros(1,locljivost);
+    
+    for col = 1:width
+        for row = 1:height
+            bin = floor(H(row,col) * locljivost) + 1; % +1 ker se zacne z 1
+            bin = min(max(bin,1), locljivost);
+            hist(bin) = hist(bin) + 1;
+        end
+    end
+
+    maxValue = max(hist(:));
+    % vrednost najmocnejsega bina == 1
+    hist_norm = (double(hist) / double(maxValue));
+
+    hist = hist_norm;
+    
+end
+==== END Gregor Turk | Gregor Turk_26687_assignsubmission_file | vaja5.m ====
+
+
+==== BEGIN Jakob Ian Pintarič & Jakob Melkić Sitar | Jakob Ian Pintarič_26681_assignsubmission_file + Jakob Melkić Sitar_26686_assignsubmission_file | nal1.m ====
+%% VAJA 5 – 1. 
+clc; clear; close all;
+
+inputFile = 'Holywood2-t00427-rgb.avi';
+
+if ~isfile(inputFile)
+    alt = 'Holywood.avi';
+    if isfile(alt)
+        inputFile = alt;
+    else
+        error("Ne najdem videa '%s' (niti '%s') v trenutni mapi.", ...
+              'Holywood2-t00427-rgb.avi', 'Holywood.avi');
+    end
+end
+
+scales = [1/2, 1/4, 1/8];
+
+methods(1).tag = "nearest";
+methods(1).interp = "nearest";
+methods(1).useAA = [];         
+
+methods(2).tag = "bilinear_AAoff";
+methods(2).interp = "bilinear";
+methods(2).useAA = false;     
+
+methods(3).tag = "bilinear_AAon";
+methods(3).interp = "bilinear";
+methods(3).useAA = true;      
+
+for m = 1:numel(methods)
+    for s = 1:numel(scales)
+
+        v = VideoReader(inputFile); 
+
+        outName = sprintf('%s_scale_%0.3f.avi', methods(m).tag, scales(s));
+        w = VideoWriter(outName, 'Motion JPEG AVI');
+        w.FrameRate = v.FrameRate; 
+        open(w);
+
+        while hasFrame(v)
+            frame = readFrame(v);
+
+            if methods(m).tag == "nearest"
+                resized = imresize(frame, scales(s), methods(m).interp);
+            else
+                resized = imresize(frame, scales(s), methods(m).interp, ...
+                                   'Antialiasing', methods(m).useAA);
+            end
+
+            writeVideo(w, resized);
+        end
+
+        close(w);
+        fprintf("Shranjeno: %s\n", outName);
+    end
+end
+
+disp("Končano: ustvarjenih 9 pomanjšanih posnetkov.");
+
+%%
+vN  = VideoReader('nearest_scale_0.125.avi');
+vO  = VideoReader('bilinear_AAoff_scale_0.125.avi');
+vI  = VideoReader('bilinear_AAon_scale_0.125.avi');
+
+fN = readFrame(vN);
+fO = readFrame(vO);
+fI = readFrame(vI);
+
+H = 288; W = 384; 
+fN2 = imresize(fN,[H W],'nearest');
+fO2 = imresize(fO,[H W],'nearest');
+fI2 = imresize(fI,[H W],'nearest');
+
+figure;
+imshow([fN2 fO2 fI2]);
+title('Nearest | Bilinear AA off | Bilinear AA on (vsi povečani z nearest)');
+
+==== END Jakob Ian Pintarič & Jakob Melkić Sitar | Jakob Ian Pintarič_26681_assignsubmission_file + Jakob Melkić Sitar_26686_assignsubmission_file | nal1.m ====
+
+==== BEGIN Jakob Ian Pintarič & Jakob Melkić Sitar | Jakob Ian Pintarič_26681_assignsubmission_file + Jakob Melkić Sitar_26686_assignsubmission_file | nal2.m ====
+%% VAJA 5 – 2. 
+clc; clear; close all;
+
+videoFile = 'squash.avi';
+if ~isfile(videoFile)
+    error("Ne najdem '%s' v trenutni mapi.", videoFile);
+end
+
+epsN = 40;          
+bins = 32;          
+betaSSD = 0.30;     
+maxFrames = inf;
+
+minW = 60;
+minH = 40;
+
+v0 = VideoReader(videoFile);
+frame0 = readFrame(v0);
+
+figure('Name','ROI','NumberTitle','off');
+imshow(frame0);
+title('Klikni 2x: zgornji-levo in spodnji-desno (ROI igralca)');
+roi = selectROI2Clicks(frame0, minW, minH);
+close;
+
+disp("ROI = [x y w h]:");
+disp(roi);
+
+track(videoFile,'2_1_euclidean_rgb.avi',roi,epsN,maxFrames,'ssd',bins,betaSSD);
+
+track(videoFile,'2_2_chi2_hue.avi',roi,epsN,maxFrames,'chi2',bins,0);
+
+implay('2_2_chi2_hue.avi');
+
+%%
+function track(videoFile,outFile,roi,epsN,maxFrames,mode,bins,beta)
+
+v = VideoReader(videoFile);
+w = VideoWriter(outFile,'Motion JPEG AVI');
+w.FrameRate = v.FrameRate;
+open(w);
+
+frame = readFrame(v);
+[x,y,W,H] = deal(roi(1),roi(2),roi(3),roi(4));
+
+if strcmp(mode,'ssd')
+    img = im2single(frame);
+    ref = img(y:y+H-1, x:x+W-1, :);
+    col = uint8([255 0 0]);
+else
+    img = hueU8(frame);
+    ref = histN(img(y:y+H-1, x:x+W-1), bins);
+    col = uint8([0 255 0]);
+end
+
+writeVideo(w, drawRect(frame,[x y W H],col,2));
+k = 1;
+
+while hasFrame(v) && k < maxFrames
+    k = k + 1;
+    frame = readFrame(v);
+
+    if strcmp(mode,'ssd')
+        img = im2single(frame);
+        [xNew,yNew] = searchSSD(img, ref, x, y, W, H, epsN);
+
+        x = round((1-beta)*x + beta*xNew);
+        y = round((1-beta)*y + beta*yNew);
+
+    else
+        img = hueU8(frame);
+        [x,y] = searchChi2(img, ref, x, y, W, H, epsN, bins);
+    end
+
+    x = max(1, min(size(frame,2)-W+1, x));
+    y = max(1, min(size(frame,1)-H+1, y));
+
+    writeVideo(w, drawRect(frame,[x y W H],col,2));
+end
+
+close(w);
+end
+
+%%
+function [xBest,yBest] = searchSSD(img, ref, x0, y0, W, H, epsN)
+
+Himg = size(img,1);
+Wimg = size(img,2);
+
+xMin = max(1,x0-epsN);
+xMax = min(Wimg-W+1,x0+epsN);
+yMin = max(1,y0-epsN);
+yMax = min(Himg-H+1,y0+epsN);
+
+lambda = 0.05;   % kazen za skoke
+
+bestVal = inf;
+xBest = x0; yBest = y0;
+
+for y = yMin:yMax
+    for x = xMin:xMax
+        p = img(y:y+H-1, x:x+W-1, :);
+        d = sum((p(:)-ref(:)).^2);
+        penalty = lambda*((x-x0)^2 + (y-y0)^2);
+        score = d + penalty;
+
+        if score < bestVal
+            bestVal = score;
+            xBest = x;
+            yBest = y;
+        end
+    end
+end
+end
+
+%%
+function [xBest,yBest] = searchChi2(imgU8, refH, x0, y0, W, H, epsN, bins)
+
+Himg = size(imgU8,1);
+Wimg = size(imgU8,2);
+
+xMin = max(1,x0-epsN);
+xMax = min(Wimg-W+1,x0+epsN);
+yMin = max(1,y0-epsN);
+yMax = min(Himg-H+1,y0+epsN);
+
+bestVal = inf;
+xBest = x0; yBest = y0;
+
+for y = yMin:yMax
+    for x = xMin:xMax
+        patch = imgU8(y:y+H-1, x:x+W-1);
+        h = histN(patch,bins);
+        d = sum((h-refH).^2 ./ (h+refH+1e-12));
+
+        if d < bestVal
+            bestVal = d;
+            xBest = x;
+            yBest = y;
+        end
+    end
+end
+end
+
+%%
+function roi = selectROI2Clicks(frame, minW, minH)
+
+Wimg = size(frame,2);
+Himg = size(frame,1);
+
+while true
+    imshow(frame);
+    title('Klikni 2x: zgornji-levo in spodnji-desno');
+    [x,y] = ginput(2);
+    x = round(x); y = round(y);
+
+    x1 = max(1,min(Wimg,x(1))); y1 = max(1,min(Himg,y(1)));
+    x2 = max(1,min(Wimg,x(2))); y2 = max(1,min(Himg,y(2)));
+
+    xMin = min(x1,x2);
+    yMin = min(y1,y2);
+
+    w = max(abs(x2-x1)+1, minW);
+    h = max(abs(y2-y1)+1, minH);
+
+    roi = [xMin yMin w h];
+    rectangle('Position',roi,'EdgeColor','r','LineWidth',2);
+
+    ok = questdlg('ROI OK?','ROI','OK','Ponovi','OK');
+    if strcmp(ok,'OK'), break; end
+end
+end
+
+%%
+function H = hueU8(rgb)
+hsvI = rgb2hsv(rgb);
+H = uint8(255*hsvI(:,:,1));
+end
+
+function h = histN(patch,bins)
+h = double(imhist(patch,bins));
+h = h/(sum(h)+1e-12);
+end
+
+%%
+function imgOut = drawRect(imgIn, rect, color, lw)
+
+imgOut = imgIn;
+x = rect(1); y = rect(2);
+W = rect(3); H = rect(4);
+
+x1 = max(1,x); y1 = max(1,y);
+x2 = min(size(imgOut,2),x+W-1);
+y2 = min(size(imgOut,1),y+H-1);
+
+R = color(1); G = color(2); B = color(3);
+
+for t=0:lw-1
+    imgOut(y1+t,x1:x2,1)=R; imgOut(y1+t,x1:x2,2)=G; imgOut(y1+t,x1:x2,3)=B;
+    imgOut(y2-t,x1:x2,1)=R; imgOut(y2-t,x1:x2,2)=G; imgOut(y2-t,x1:x2,3)=B;
+    imgOut(y1:y2,x1+t,1)=R; imgOut(y1:y2,x1+t,2)=G; imgOut(y1:y2,x1+t,3)=B;
+    imgOut(y1:y2,x2-t,1)=R; imgOut(y1:y2,x2-t,2)=G; imgOut(y1:y2,x2-t,3)=B;
+end
+end
+==== END Jakob Ian Pintarič & Jakob Melkić Sitar | Jakob Ian Pintarič_26681_assignsubmission_file + Jakob Melkić Sitar_26686_assignsubmission_file | nal2.m ====
+
+==== BEGIN Jakob Ian Pintarič & Jakob Melkić Sitar | Jakob Ian Pintarič_26681_assignsubmission_file + Jakob Melkić Sitar_26686_assignsubmission_file | nal3.m ====
+%% VAJA 5 – 3. 
+clc;
+close all;
+
+video = VideoReader("squash.avi");
+frame = readFrame(video);
+gray = rgb2gray(frame);
+
+alphaT = 0.03;
+alphaP = 0.4;
+search_radius = 40;
+minScore = 0.45;       
+learnScore = 0.65;
+maxMove = 30;
+border = 25;
+
+lostCounter = 0;
+lostLimit = 5;        
+
+figure; imshow(frame);
+title("Izberi 2 točki na rdečem igralcu");
+p = round(ginput(2));
+close;
+
+x1 = min(p(:,1)); y1 = min(p(:,2));
+x2 = max(p(:,1)); y2 = max(p(:,2));
+
+w = x2 - x1;
+h = y2 - y1;
+
+template = gray(y1:y2, x1:x2);
+cx = x1 + w/2;
+cy = y1 + h/2;
+
+fig = figure('visible','off');
+ax = axes(fig);
+
+videoout = VideoWriter("naloga3_sprotno_ucenje.avi","Uncompressed AVI");
+open(videoout);
+
+while hasFrame(video)
+
+    frame = readFrame(video);
+    gray = rgb2gray(frame);
+
+    if lostCounter < lostLimit
+        xs = max(1, round(cx - search_radius));
+        ys = max(1, round(cy - search_radius));
+        xe = min(size(gray,2), round(cx + search_radius + w));
+        ye = min(size(gray,1), round(cy + search_radius + h));
+    else
+        xs = 1; ys = 1;
+        xe = size(gray,2);
+        ye = size(gray,1);
+    end
+
+    roi = gray(ys:ye, xs:xe);
+
+    C = normxcorr2(template, roi);
+    [peak, idx] = max(C(:));
+    [ypeak, xpeak] = ind2sub(size(C), idx);
+
+    xtl = xpeak - size(template,2) + 1;
+    ytl = ypeak - size(template,1) + 1;
+
+    xtl = max(1, min(xtl, size(roi,2)-w));
+    ytl = max(1, min(ytl, size(roi,1)-h));
+
+    cand_x = xs + xtl - 1;
+    cand_y = ys + ytl - 1;
+
+    cand_cx = cand_x + w/2;
+    cand_cy = cand_y + h/2;
+
+    dx = abs(cand_cx - cx);
+    dy = abs(cand_cy - cy);
+
+    if peak > minScore && dx < maxMove && dy < maxMove
+        cx = (1-alphaP)*cx + alphaP*cand_cx;
+        cy = (1-alphaP)*cy + alphaP*cand_cy;
+        lostCounter = 0;
+    else
+        lostCounter = lostCounter + 1;
+    end
+
+    bx = round(cx - w/2);
+    by = round(cy - h/2);
+
+    bx = max(1, min(bx, size(gray,2)-w));
+    by = max(1, min(by, size(gray,1)-h));
+
+    if peak > learnScore && lostCounter == 0 && ...
+       bx > border && by > border && ...
+       bx+w < size(gray,2)-border && by+h < size(gray,1)-border
+
+        patch = gray(by:by+h, bx:bx+w);
+        template = uint8((1-alphaT)*double(template) + alphaT*double(patch));
+    end
+
+    cla(ax);
+    imshow(frame, 'Parent', ax); hold(ax,'on');
+
+    if peak > minScore
+        rectangle(ax,'Position',[bx by w h],'EdgeColor','g','LineWidth',2);
+    end
+
+    text(ax,10,20,sprintf("score = %.2f",peak), ...
+        'Color','y','FontSize',12,'FontWeight','bold');
+
+    hold(ax,'off');
+
+    F = getframe(ax);
+    writeVideo(videoout, F.cdata);
+end
+
+close(videoout);
+close(fig);
+
+disp("NALOGA 3 KONČANA – algoritem je sproti pozabil, kaj je igralec se je naučil napačnega vzorca (ozadja). .");
+==== END Jakob Ian Pintarič & Jakob Melkić Sitar | Jakob Ian Pintarič_26681_assignsubmission_file + Jakob Melkić Sitar_26686_assignsubmission_file | nal3.m ====
+
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga1_vaja5.m ====
+%% Naloga 1 - Podvzorcenje slik
+clear; clc;
+v = VideoReader('Holywood.avi');
+
+scale = [0.5, 0.25, 0.125];  
+methods = {'nearest', 'bilinear', 'bilinear_prefilter'}; 
+
+for i = 1:length(methods)           % izbira metode
+    for j = 1:length(scale)         % izbira faktorja
+
+        v.CurrentTime = 0;    
+        outName = sprintf('out_%s_%dx.avi', methods{i}, round(1/scale(j)));
+        w = VideoWriter(outName);   % pripravi zapisovanje
+        open(w);
+
+        while hasFrame(v)           % gre cez vse framee
+            frame = readFrame(v);   % preberi en frame
+
+            if i == 1
+                resized = imresize(frame, scale(j), 'nearest'); % nearest neighbor
+            elseif i == 2
+                resized = imresize(frame, scale(j), 'bilinear', 'Antialiasing', false); % bilinear brez AA
+            else
+                resized = imresize(frame, scale(j), 'bilinear', 'Antialiasing', true);  % bilinear z AA
+            end
+
+            writeVideo(w, resized); % shrani frame v izhodni video
+        end
+
+        close(w);                   
+    end
+end
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga1_vaja5.m ====
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga2_1_vaja5.m ====
+clear; clc;
+
+videoIn  = VideoReader('squash.avi');     
+videoOut = VideoWriter('track2.avi');     
+open(videoOut);                           
+
+firstFrame = readFrame(videoIn);   %uzami prvi frame in ga prikazi
+imshow(firstFrame);                    
+selection = round(getrect);  %izberemo pravokotnik [x y w h]
+
+%izrez predloge igralca iz prvega frema  
+template = firstFrame( ...   
+    selection(2):selection(2)+selection(4)-1, ...
+    selection(1):selection(1)+selection(3)-1, :);
+
+posX = selection(1); posY = selection(2); %zacetna pozicija pravokotnika
+tplWidth = selection(3); tplHeight = selection(4); %velikost pravokotnika
+searchRadius = 15;   % epsilon, lokalno iskanje, uzamemo 20 pikselov okol
+
+while hasFrame(videoIn)   %cez vse naslednje frame-e
+    currentFrame = readFrame(videoIn);
+    
+    %zacetne najbolse vrednosti
+    minError = inf; 
+    bestX = posX; 
+    bestY = posY; 
+
+    % meje iskalnega okna (da ne gremo izven slike)
+    yMin = max(1, posY - searchRadius);
+    yMax = min(size(currentFrame,1) - tplHeight + 1, posY + searchRadius);
+    xMin = max(1, posX - searchRadius);
+    xMax = min(size(currentFrame,2) - tplWidth + 1, posX + searchRadius);
+
+    %preizkusimo vse kandidate v okolici
+    for y = yMin:yMax
+        for x = xMin:xMax
+            candidate = currentFrame(y:y+tplHeight-1, x:x+tplWidth-1, :); %kandidatni patch
+            diff = double(candidate) - double(template); %razlika do template
+            error = sum(diff(:).^2);   % L2^2 (manj-bolj podobno)
+
+            if error < minError %shrani najboljsi kandidat
+                minError = error; bestX = x; bestY = y;
+            end
+        end
+    end
+
+    posX = bestX; posY = bestY;            % posodobi lokacijo objekta
+    outputFrame = insertShape(currentFrame,'Rectangle',... % narisi bbox
+        [posX posY tplWidth tplHeight],'Color','red');
+
+    writeVideo(videoOut, outputFrame);     % shrani frame v izhodni video
+end
+
+close(videoOut);                           % zapri izhodni video
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga2_1_vaja5.m ====
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga2_2_vaja5.m ====
+clear; clc;
+
+videoIn  = VideoReader('squash.avi');          
+videoOut = VideoWriter('track2_chi2.avi');     
+open(videoOut);
+
+firstFrame = readFrame(videoIn);   %uzami prvi frame in ga prikazi
+imshow(firstFrame);                    
+selection = round(getrect);  %izberemo pravokotnik [x y w h]
+
+%izrez predloge igralca iz prvega frema  
+template = firstFrame( ...   
+    selection(2):selection(2)+selection(4)-1, ...
+    selection(1):selection(1)+selection(3)-1, :);
+
+posX = selection(1); posY = selection(2); %zacetna pozicija pravokotnika
+tplWidth = selection(3); tplHeight = selection(4); %velikost pravokotnika
+searchRadius = 15;   % epsilon, lokalno iskanje, uzamemo 20 pikselov okol
+numBins = 8;    % st. binov histograma
+
+templateHist = rgb_hist_fast(template, numBins); %referencni histogram
+
+while hasFrame(videoIn)                        
+    currentFrame = readFrame(videoIn);
+
+    %najboljsa (najmanjsa) chi2 razdalja
+    minChi2 = inf;                             
+    bestX = posX;
+    bestY = posY;
+
+    % meje iskalnega okna (da ne gres izven slike)
+    yMin = max(1, posY-searchRadius);
+    yMax = min(size(currentFrame,1)-tplHeight+1, posY+searchRadius);
+    xMin = max(1, posX-searchRadius);
+    xMax = min(size(currentFrame,2)-tplWidth+1, posX+searchRadius);
+
+    for y = yMin:yMax                         
+        for x = xMin:xMax
+
+            candidate = currentFrame(y:y+tplHeight-1, x:x+tplWidth-1, :); %kandidatni patch
+            candidateHist = rgb_hist_fast(candidate, numBins);            %histogram kandidata
+
+            diff = templateHist - candidateHist;  %razlika histogramov
+            chi2 = 0.5*sum(diff.^2 ./ (templateHist + candidateHist + eps));  %chi-square razdalja
+
+            %izberi najbolj podoben
+            if chi2 < minChi2      
+                minChi2 = chi2;
+                bestX = x;
+                bestY = y;
+            end
+        end
+    end
+    
+    %posodobi lokacijo
+    posX = bestX;                                
+    posY = bestY;
+
+    outputFrame = insertShape(currentFrame, 'Rectangle', ... 
+        [posX posY tplWidth tplHeight], 'Color', 'green');
+
+    writeVideo(videoOut, outputFrame);           
+end
+
+close(videoOut);
+
+%funkcija-RGB histogram,normalizira
+function h = rgb_hist_fast(img, bins)
+
+img = uint8(img);     %poskrbi da je 0..255
+
+edges = linspace(0,256,bins+1);  %robovi binov (npr. 0-32-...-256)
+
+hR = histcounts(img(:,:,1), edges); %histogram rdecega kanala
+hG = histcounts(img(:,:,2), edges); %histogram zelenega kanala
+hB = histcounts(img(:,:,3), edges); %histogram modrega kanala
+
+h = double([hR hG hB]);       %zdruzi v en vektor RGB
+h = h / sum(h);    %normalizacija
+end
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga2_2_vaja5.m ====
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga3_1vaja5.m ====
+clear; clc;
+
+videoIn  = VideoReader('squash.avi');
+videoOut = VideoWriter('track3_L2_update.avi');
+videoOut.FrameRate = videoIn.FrameRate;
+open(videoOut);
+
+firstFrame = readFrame(videoIn);
+imshow(firstFrame);
+selection = round(getrect);                 % [x y w h]
+
+template = firstFrame( ...
+    selection(2):selection(2)+selection(4)-1, ...
+    selection(1):selection(1)+selection(3)-1, :);
+
+posX = selection(1); posY = selection(2);
+tplWidth = selection(3); tplHeight = selection(4);
+
+searchRadius = 15;
+updateEvery = 1;    %posodobi vsak N-ti frame
+frameIdx = 0;
+
+while hasFrame(videoIn)
+    frameIdx = frameIdx + 1;
+    currentFrame = readFrame(videoIn);
+
+    %uzamemo trenutne pozicije kot najboljse
+    minError = inf; bestX = posX; bestY = posY;
+
+     % meje iskalnega okna (da ne gres izven slike)
+    yMin = max(1, posY - searchRadius);
+    yMax = min(size(currentFrame,1) - tplHeight + 1, posY + searchRadius);
+    xMin = max(1, posX - searchRadius);
+    xMax = min(size(currentFrame,2) - tplWidth  + 1, posX + searchRadius);
+
+    for y = yMin:yMax
+        for x = xMin:xMax
+
+            %trenuten kandidat
+            candidate = currentFrame(y:y+tplHeight-1, x:x+tplWidth-1, :);
+
+            diff = double(candidate) - double(template);
+            error = sum(diff(:).^2);       
+
+            %posodabljane najboljsih najdenih parametrov
+            if error < minError
+                minError = error;
+                bestX = x; bestY = y;
+            end
+        end
+    end
+
+    posX = bestX; posY = bestY;
+
+    %sprotno ucenje (posodobi template)
+    newTpl = currentFrame(posY:posY+tplHeight-1, posX:posX+tplWidth-1, :);
+    template = newTpl;
+
+    outputFrame = insertShape(currentFrame,'Rectangle', ...
+        [posX posY tplWidth tplHeight], 'Color','red','LineWidth',3);
+
+    writeVideo(videoOut, outputFrame);
+end
+
+close(videoOut);
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga3_1vaja5.m ====
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga3_2vaja5.m ====
+clear; clc;
+
+videoIn  = VideoReader('squash.avi');
+videoOut = VideoWriter('track3_chi2_update.avi');
+videoOut.FrameRate = videoIn.FrameRate;
+open(videoOut);
+
+firstFrame = readFrame(videoIn);
+imshow(firstFrame);
+selection = round(getrect);   % [x y w h]
+
+templatePatch = firstFrame( ...
+    selection(2):selection(2)+selection(4)-1, ...
+    selection(1):selection(1)+selection(3)-1, :);
+
+posX = selection(1); posY = selection(2);
+tplWidth = selection(3); tplHeight = selection(4);
+
+searchRadius = 15;
+numBins = 8;
+
+templateHist = rgb_hist_fast(templatePatch, numBins);
+
+updateEvery = 1;    %posodobi vsak N-ti frame
+frameIdx = 0;
+
+while hasFrame(videoIn)
+    frameIdx = frameIdx + 1;
+    currentFrame = readFrame(videoIn);
+
+    minChi2 = inf; bestX = posX; bestY = posY;
+
+    yMin = max(1, posY - searchRadius);
+    yMax = min(size(currentFrame,1) - tplHeight + 1, posY + searchRadius);
+    xMin = max(1, posX - searchRadius);
+    xMax = min(size(currentFrame,2) - tplWidth  + 1, posX + searchRadius);
+
+    for y = yMin:yMax
+        for x = xMin:xMax
+            candidate = currentFrame(y:y+tplHeight-1, x:x+tplWidth-1, :);
+            candHist = rgb_hist_fast(candidate, numBins);
+
+            diff = templateHist - candHist;
+            chi2 = 0.5*sum(diff.^2 ./ (templateHist + candHist + eps));
+
+            if chi2 < minChi2
+                minChi2 = chi2;
+                bestX = x; bestY = y;
+            end
+        end
+    end
+
+    posX = bestX; posY = bestY;
+
+    % sprotno ucenje (posodobi histogram)
+  
+    bestPatch = currentFrame(posY:posY+tplHeight-1, posX:posX+tplWidth-1, :);
+    newHist = rgb_hist_fast(bestPatch, numBins);
+
+    templateHist = newHist;
+    templateHist = templateHist / sum(templateHist);   %ostani normiran
+  
+
+    outputFrame = insertShape(currentFrame,'Rectangle', ...
+        [posX posY tplWidth tplHeight], 'Color','green','LineWidth',3);
+
+    writeVideo(videoOut, outputFrame);
+end
+
+close(videoOut);
+
+function h = rgb_hist_fast(img, bins)
+img = uint8(img);
+edges = linspace(0,256,bins+1);
+hR = histcounts(img(:,:,1), edges);
+hG = histcounts(img(:,:,2), edges);
+hB = histcounts(img(:,:,3), edges);
+h = double([hR hG hB]);
+h = h / sum(h);
+end
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_26684_assignsubmission_file + Mihaela Temelkova_26677_assignsubmission_file | Naloga3_2vaja5.m ====
+
+
+==== BEGIN Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | naloga1.m ====
+holywood=VideoReader("Holywood.avi");
+frames=read(holywood,[1 Inf]);
+velikost_videa=size(frames);
+
+for i=1:velikost_videa(4)
+    holywood_neighbor_pol(:,:,:,i)=imresize(frames(:,:,:,i),1/2,'nearest');
+    holywood_neighbor_cet(:,:,:,i)=imresize(frames(:,:,:,i),1/4,'nearest');
+    holywood_neighbor_osm(:,:,:,i)=imresize(frames(:,:,:,i),1/8,'nearest');
+    holywood_bi_pol(:,:,:,i)=imresize(frames(:,:,:,i),1/2,'bilinear','Antialiasing',false);
+    holywood_bi_cet(:,:,:,i)=imresize(frames(:,:,:,i),1/4,'bilinear','Antialiasing',false);
+    holywood_bi_osm(:,:,:,i)=imresize(frames(:,:,:,i),1/8,'bilinear','Antialiasing',false);
+    holywood_predbi_pol(:,:,:,i)=imresize(frames(:,:,:,i),1/2,'bilinear','Antialiasing',true);
+    holywood_predbi_cet(:,:,:,i)=imresize(frames(:,:,:,i),1/4,'bilinear','Antialiasing',true);
+    holywood_predbi_osm(:,:,:,i)=imresize(frames(:,:,:,i),1/8,'bilinear','Antialiasing',true);
+end
+
+writerObj=VideoWriter('1_naloga_neighbor_pol.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_neighbor_pol,'uint8'));
+close(writerObj);
+
+writerObj=VideoWriter('1_naloga_neighbor_cet.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_neighbor_cet,'uint8'));
+close(writerObj);
+
+writerObj=VideoWriter('1_naloga_neighbor_osm.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_neighbor_osm,'uint8'));
+close(writerObj);
+
+writerObj=VideoWriter('1_naloga_bi_pol.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_bi_pol,'uint8'));
+close(writerObj);
+
+writerObj=VideoWriter('1_naloga_bi_cet.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_bi_cet,'uint8'));
+close(writerObj);
+
+writerObj=VideoWriter('1_naloga_bi_osm.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_bi_osm,'uint8'));
+close(writerObj);
+
+writerObj=VideoWriter('1_naloga_predbi_pol.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_predbi_pol,'uint8'));
+close(writerObj);
+
+writerObj=VideoWriter('1_naloga_predbi_cet.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_predbi_cet,'uint8'));
+close(writerObj);
+
+writerObj=VideoWriter('1_naloga_predbi_osm.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(holywood_predbi_osm,'uint8'));
+close(writerObj);
+==== END Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | naloga1.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | naloga2a.m ====
+clear all;
+squash=VideoReader("squash.avi");
+frames=read(squash,[1 Inf]);
+velikost_videa=size(frames);
+
+imshow(frames(:,:,:,1));
+[y_zac,x_zac]=ginput(2);
+y_zac=floor(y_zac);
+x_zac=floor(x_zac);
+znacilka_evk=frames(x_zac(1):x_zac(2),y_zac(1):y_zac(2),:,1);
+velikost_znacilke_evk=size(znacilka_evk);
+%imshow(znacilka_evk);
+
+eps=35;
+sred_x=x_zac(1);
+sred_y=y_zac(2);
+
+%i=3;  %samo za teste
+for i=1:velikost_videa(4)
+    okolica=frames((sred_y-eps):(sred_y+eps),(sred_x-eps):(sred_x+eps),:,i);
+    velikost_okolice=size(okolica);
+    
+    for y=1:(velikost_okolice(2)-velikost_znacilke_evk(2))
+        for x=1:(velikost_okolice(1)-velikost_znacilke_evk(1))
+            evk(x,y)=mean(sqrt(sum((double(double(znacilka_evk)-double(okolica(x:(x+velikost_znacilke_evk(1)-1),y:(y+velikost_znacilke_evk(2)-1),:)))).^2)),"all");
+        end
+    end
+    
+    minimum=min(min(evk));
+    [poz1, poz2]=find(evk==minimum);
+    sred_x=poz2-eps+sred_x+floor(velikost_znacilke_evk(2)/2);
+    sred_y=poz1-eps+sred_y+floor(velikost_znacilke_evk(1)/2);
+    
+    koncna_slika_evk(:,:,:,i)=insertShape(frames(:,:,:,i),"Circle",[sred_x sred_y 20],'LineWidth',3);
+    %imshow(koncna_slika_evk(:,:,:,i));   %samo za teste
+end
+
+writerObj=VideoWriter('2a_naloga.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(koncna_slika_evk,'uint8'));
+close(writerObj);
+==== END Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | naloga2a.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | naloga2b.m ====
+clear all;
+squash=VideoReader("squash.avi");
+frames=read(squash,[1 Inf]);
+velikost_videa=size(frames);
+
+imshow(frames(:,:,:,1));
+[y_zac,x_zac]=ginput(2);
+y_zac=floor(y_zac);
+x_zac=floor(x_zac);
+znacilka_hi=frames(x_zac(1):x_zac(2),y_zac(1):y_zac(2),:,1);
+velikost_znacilke_hi=size(znacilka_hi);
+%imshow(znacilka_hi);
+
+histogram_znacilke_hi=poisci_histogram(znacilka_hi);
+max_vrednost_hist=max(max(max(histogram_znacilke_hi)));
+koef=255/max_vrednost_hist;
+for i=1:8
+    for j=1:8
+        for k=1:8
+            histogram_znacilke_hi_norm(i,j,k)=floor((histogram_znacilke_hi(i,j,k)*koef));
+        end
+    end
+end
+
+eps=35;
+sred_x=x_zac(1);
+sred_y=y_zac(2);
+
+%i=5;  %samo za teste
+for i=1:250
+    okolica=frames((sred_y-eps):(sred_y+eps),(sred_x-eps):(sred_x+eps),:,i);
+    velikost_okolice=size(okolica);
+    
+    for y=1:(velikost_okolice(2)-velikost_znacilke_hi(2))
+        for x=1:(velikost_okolice(1)-velikost_znacilke_hi(1))
+            opazovani_del_okolice=okolica(x:(x+velikost_znacilke_hi(1)-1),y:(y+velikost_znacilke_hi(2)-1),:);
+            histogram_opa_dela=poisci_histogram(opazovani_del_okolice);
+            
+            max_vrednost_hist=max(max(max(histogram_opa_dela)));
+            koef=255/max_vrednost_hist;
+            for m=1:8
+                for j=1:8
+                    for k=1:8
+                        histogram_opa_dela_norm(m,j,k)=floor((histogram_opa_dela(m,j,k)*koef));
+                    end
+                end
+            end
+            
+            hi_kvadrat(x,y)=sum((histogram_opa_dela_norm-histogram_znacilke_hi_norm).^2,'all');
+            
+        end
+    end
+    
+    minimum=min(min(hi_kvadrat));
+    [poz1, poz2]=find(hi_kvadrat==minimum);
+    sred_x=poz2(1)-eps+sred_x(1)+floor(velikost_znacilke_hi(2)/2);
+    sred_y=poz1(1)-eps+sred_y(1)+floor(velikost_znacilke_hi(1)/2);
+    
+    koncna_slika_hi(:,:,:,i)=insertShape(frames(:,:,:,i),"Circle",[sred_x(1) sred_y(1) 20],'LineWidth',3,"Color",'green');
+    %imshow(koncna_slika_hi(:,:,:,i));  %samo za teste
+end
+
+writerObj=VideoWriter('2b_naloga.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(koncna_slika_hi,'uint8'));
+close(writerObj);
+==== END Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | naloga2b.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | naloga3.m ====
+clear all;
+squash=VideoReader("squash.avi");
+frames=read(squash,[1 Inf]);
+velikost_videa=size(frames);
+
+imshow(frames(:,:,:,1));
+[y_zac,x_zac]=ginput(2);
+y_zac=floor(y_zac);
+x_zac=floor(x_zac);
+znacilka_evk3=frames(x_zac(1):x_zac(2),y_zac(1):y_zac(2),:,1);
+velikost_znacilke_evk3=size(znacilka_evk3);
+
+%imshow(znacilka_evk);
+eps=25;
+sred_x=floor(x_zac(1)+(x_zac(2)-x_zac(1))/2);
+sred_y=floor(y_zac(1)+(y_zac(2)-y_zac(1))/2);
+
+%i=3;  %samo za teste
+for i=1:velikost_videa(4)
+    okolica=frames((sred_y-eps):(sred_y+eps),(sred_x-eps):(sred_x+eps),:,i);
+    velikost_okolice=size(okolica);
+    
+    for y=1:(velikost_okolice(2)-velikost_znacilke_evk3(2))
+        for x=1:(velikost_okolice(1)-velikost_znacilke_evk3(1))
+            evk(x,y)=mean(sqrt(sum((double(double(znacilka_evk3)-double(okolica(x:(x+velikost_znacilke_evk3(1)-1),y:(y+velikost_znacilke_evk3(2)-1),:)))).^2)),"all");
+        end
+    end
+    
+    minimum=min(min(evk));
+    [poz1, poz2]=find(evk==minimum);
+    sred_x=poz2-eps+sred_x(1)+floor(velikost_znacilke_evk3(2)/2);
+    sred_y=poz1-eps+sred_y(1)+floor(velikost_znacilke_evk3(1)/2);
+    
+    koncna_slika_evk3(:,:,:,i)=insertShape(frames(:,:,:,i),"Circle",[sred_x(1) sred_y(1) 20],'LineWidth',3);
+    %imshow(koncna_slika_evk3(:,:,:,i));   %samo za teste
+    
+    znacilka_evk3=okolica((poz1(1)):(poz1(1)+velikost_znacilke_evk3(1)-1),(poz2(1)):(poz2(1)+velikost_znacilke_evk3(2)-1),:);
+    %imshow(znacilka_evk3);
+end
+
+writerObj=VideoWriter('3_naloga.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(koncna_slika_evk3,'uint8'));
+close(writerObj);
+==== END Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | naloga3.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | poisci_histogram.m ====
+function histogram=poisci_histogram(vzorec)
+    dim_vzorca=size(vzorec);
+    histogram=zeros(8,8,8);
+    for R_vrednost=0:32:224
+        for G_vrednost=0:32:224
+            for B_vrednost=0:32:224
+                for j=1:dim_vzorca(2)
+                    for i=1:dim_vzorca(1)
+                        if ((vzorec(i,j,1)>=R_vrednost) && (vzorec(i,j,1)<=(R_vrednost+31)) && (vzorec(i,j,2)>=G_vrednost) && (vzorec(i,j,2)<=(G_vrednost+31)) && (vzorec(i,j,3)>=B_vrednost) && (vzorec(i,j,3)<=(B_vrednost+31)))
+                            histogram((R_vrednost/32)+1,(G_vrednost/32)+1,(B_vrednost/32)+1)=histogram((R_vrednost/32)+1,(G_vrednost/32)+1,(B_vrednost/32)+1)+1;
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+==== END Lina Josifovska | Lina Josifovska_26675_assignsubmission_file | poisci_histogram.m ====
+
+
+==== BEGIN Lovro Perme | Lovro Perme_26683_assignsubmission_file | CV_Vaja5.m ====
+%% ====== Naloga 1 =========================================
+clc;
+close;
+
+video = VideoReader('01-Input\holywood.avi');
+holywood = read(video);
+
+methods = ["nearest", "bilinear", "bilinear"];
+antialiasings = [false, false, true];
+
+holywood_half = zeros(size(holywood,1)*0.5, size(holywood,2)*0.5, size(holywood,3), size(holywood,4));
+holywood_quarter = zeros(size(holywood,1)*0.25, size(holywood,2)*0.25, size(holywood,3), size(holywood,4));
+holywood_eighth = zeros(size(holywood,1)*0.125, size(holywood,2)*0.125, size(holywood,3), size(holywood,4));
+
+for j = 1 : length(methods)
+    method = methods(j);
+    antialiasing = antialiasings(j);
+
+    for i = 1 : size(holywood, 4)
+        holywood_half(:,:,:,i) = imresize(holywood(:,:,:,i), 0.5, method,"Antialiasing",antialiasing);
+        holywood_quarter(:,:,:,i) = imresize(holywood(:,:,:,i), 0.25, method,"Antialiasing",antialiasing);
+        holywood_eighth(:,:,:,i) = imresize(holywood(:,:,:,i), 0.125, method,"Antialiasing",antialiasing);
+    end
+    out_filename = sprintf('02-Output\\holywood_half_%s_antialising_%d.avi', method, antialiasing);
+    writer_object = VideoWriter(out_filename);
+    writer_object.FrameRate = holywood_obj.FrameRate;
+    writer_object.Quality = 100;
+    open(writer_object);
+    writeVideo(writer_object, uint8(holywood_half))
+    close(writer_object)
+
+    out_filename = sprintf('02-Output\\holywood_quarter_%s_antialising_%d.avi', method, antialiasing);
+    writer_object = VideoWriter(out_filename);
+    writer_object.FrameRate = holywood_obj.FrameRate;
+    writer_object.Quality = 100;
+    open(writer_object);
+    writeVideo(writer_object, uint8(holywood_quarter))
+    close(writer_object)
+
+    out_filename = sprintf('02-Output\\holywood_eighth_%s_antialising_%d.avi', method, antialiasing);
+    writer_object = VideoWriter(out_filename);
+    writer_object.FrameRate = holywood_obj.FrameRate;
+    writer_object.Quality = 100;
+    open(writer_object);
+    writeVideo(writer_object, uint8(holywood_eighth))
+    close(writer_object)
+end
+
+%% ====== Naloga 2_1 =========================================
+clc;
+close;
+
+video = VideoReader('01-Input\squash.avi');
+squash = read(video);
+
+imshow(squash(:,:,:,1));
+title('Z 2 točkama pravokotnika označi igralca');
+hold on;
+[box_x, box_y] = ginput(2);
+box_x = round(box_x);
+box_y = round(box_y);
+
+location = [round((box_x(1) + box_x(2))/2), round((box_y(1) + box_y(2))/2)];
+
+okolica = 25;   %kvadratna okolica, na kateri iščemo poizicjo igralca
+
+znacilka  = squash(box_y(1):box_y(2),box_x(1):box_x(2),:,1);
+znacilka_velikost = size(znacilka);
+
+razdalja = inf(size(squash, 1), size(squash, 2));
+
+writer_object = VideoWriter('02-Output\squash_evklidska.avi');
+writer_object.FrameRate = video.FrameRate;
+writer_object.Quality = 100;
+open(writer_object);
+
+min_x = ceil(znacilka_velikost(2)/2);
+max_x = floor(size(squash, 2) - znacilka_velikost(2)/2);
+min_y = ceil(znacilka_velikost(1)/2);
+max_y = floor(size(squash, 1) - znacilka_velikost(1)/2);
+
+for frame = 1 : size(squash, 4)
+    % da negremo čez robove slike
+    start_x = max(location(1) - okolica, min_x) + 1; 
+    end_x   = min(location(1) + okolica, max_x) + 1;
+    
+    start_y = max(location(2) - okolica, min_y) + 1;
+    end_y   = min(location(2) + okolica, max_y) + 1;
+
+    for x = start_x : end_x
+        for y = start_y : end_y
+            izsek = squash(y - floor(znacilka_velikost(1)/2) : y + ceil(znacilka_velikost(1)/2) - 1, x - floor(znacilka_velikost(2)/2) : x + ceil(znacilka_velikost(2)/2) - 1, :, frame);
+        
+            razlika = double(izsek) - double(znacilka);
+            razdalja(y,x) = sum(razlika(:).^2);            
+        end
+    end
+
+    [min_val, idx] = min(razdalja(:));
+    [y_idx, x_idx] = ind2sub(size(razdalja), idx);
+    location = [x_idx, y_idx];
+    razdalja = inf(size(squash, 1), size(squash, 2));
+    
+    new_frame = insertShape(squash(:,:,:,frame), 'circle',[location 20], 'Color', 'red','LineWidth', 2);
+    writeVideo(writer_object, new_frame);
+end
+
+close(writer_object);
+
+
+%% ====== Naloga 2_2 =========================================
+clc;
+close;
+
+video = VideoReader('01-Input\squash.avi');
+squash = read(video);
+
+imshow(squash(:,:,:,1));
+title('Z 2 točkama pravokotnika označi igralca');
+hold on;
+[box_x, box_y] = ginput(2);
+box_x = round(box_x);
+box_y = round(box_y);
+
+location = [round((box_x(1) + box_x(2))/2), round((box_y(1) + box_y(2))/2)];
+
+okolica = 25;   %kvadratna okolica, na kateri iščemo poizicjo igralca
+hist_bins = 8;
+
+znacilka  = squash(box_y(1):box_y(2),box_x(1):box_x(2),:,1);
+znacilka_velikost = size(znacilka);
+znacilka_hist = get_histogram(znacilka, hist_bins);
+
+razdalja = inf(size(squash, 1), size(squash, 2));
+
+writer_object = VideoWriter('02-Output\squash_chi_squared.avi');
+writer_object.FrameRate = video.FrameRate;
+writer_object.Quality = 100;
+open(writer_object);
+
+min_x = ceil(znacilka_velikost(2)/2);
+max_x = floor(size(squash, 2) - znacilka_velikost(2)/2);
+min_y = ceil(znacilka_velikost(1)/2);
+max_y = floor(size(squash, 1) - znacilka_velikost(1)/2);
+
+for frame = 1 : size(squash, 4)
+    % da negremo čez robove slike
+    start_x = max(location(1) - okolica, min_x) + 1; 
+    end_x   = min(location(1) + okolica, max_x) + 1;
+    
+    start_y = max(location(2) - okolica, min_y) + 1;
+    end_y   = min(location(2) + okolica, max_y) + 1;
+
+    for x = start_x : end_x
+        for y = start_y : end_y
+            izsek = squash(y - floor(znacilka_velikost(1)/2) : y + ceil(znacilka_velikost(1)/2) - 1, x - floor(znacilka_velikost(2)/2) : x + ceil(znacilka_velikost(2)/2) - 1, :, frame);
+            izsek_hist = get_histogram(izsek, hist_bins);
+
+            h1 = double(znacilka_hist(:));
+            h2 = double(izsek_hist(:));
+            
+            varnost = 1e-10;    %da preprečimo deljenje z 0
+            razlika = 0.5 * sum((h1 - h2).^2 ./ (h1 + h2 + varnost));            
+            razdalja(y,x) = razlika;         
+        end
+    end
+
+    [min_val, idx] = min(razdalja(:));
+    [y_idx, x_idx] = ind2sub(size(razdalja), idx);
+    location = [x_idx, y_idx];
+    razdalja = inf(size(squash, 1), size(squash, 2));
+    
+    new_frame = insertShape(squash(:,:,:,frame), 'circle',[location 20], 'Color', 'red','LineWidth', 2);
+    writeVideo(writer_object, new_frame);
+end
+
+close(writer_object);
+
+
+%% ====== Naloga 3 =========================================
+clc;
+close;
+
+video = VideoReader('01-Input\squash.avi');
+squash = read(video);
+
+imshow(squash(:,:,:,1));
+title('Z 2 točkama pravokotnika označi igralca');
+hold on;
+[box_x, box_y] = ginput(2);
+box_x = round(box_x);
+box_y = round(box_y);
+
+location = [round((box_x(1) + box_x(2))/2), round((box_y(1) + box_y(2))/2)];
+
+okolica = 25;   %kvadratna okolica, na kateri iščemo poizicjo igralca
+hist_bins = 8;
+learning_rate = 0.1;     % x*100% se vzame novega histograma - da omejimo drift  
+
+znacilka  = squash(box_y(1):box_y(2),box_x(1):box_x(2),:,1);
+znacilka_velikost = size(znacilka);
+znacilka_hist = get_histogram(znacilka, hist_bins);
+
+razdalja = inf(size(squash, 1), size(squash, 2));
+
+writer_object = VideoWriter('02-Output\squash_chi_squared_learn.avi');
+writer_object.FrameRate = video.FrameRate;
+writer_object.Quality = 100;
+open(writer_object);
+
+min_x = ceil(znacilka_velikost(2)/2);
+max_x = floor(size(squash, 2) - znacilka_velikost(2)/2);
+min_y = ceil(znacilka_velikost(1)/2);
+max_y = floor(size(squash, 1) - znacilka_velikost(1)/2);
+
+for frame = 1 : size(squash, 4)
+    % da negremo čez robove slike
+    start_x = max(location(1) - okolica, min_x) + 1; 
+    end_x   = min(location(1) + okolica, max_x) + 1;
+    
+    start_y = max(location(2) - okolica, min_y) + 1;
+    end_y   = min(location(2) + okolica, max_y) + 1;
+
+    for x = start_x : end_x
+        for y = start_y : end_y
+            izsek = squash(y - floor(znacilka_velikost(1)/2) : y + ceil(znacilka_velikost(1)/2) - 1, x - floor(znacilka_velikost(2)/2) : x + ceil(znacilka_velikost(2)/2) - 1, :, frame);
+            izsek_hist = get_histogram(izsek, hist_bins);
+
+            h1 = double(znacilka_hist(:));
+            h2 = double(izsek_hist(:));
+            
+            varnost = 1e-10;    %da preprečimo deljenje z 0
+            razlika = 0.5 * sum((h1 - h2).^2 ./ (h1 + h2 + varnost));            
+            razdalja(y,x) = razlika;         
+        end
+    end
+
+    [min_val, idx] = min(razdalja(:));
+    [y_idx, x_idx] = ind2sub(size(razdalja), idx);
+    location = [x_idx, y_idx];
+    razdalja = inf(size(squash, 1), size(squash, 2));
+
+    znacilka_new  = squash((location(2) - floor(znacilka_velikost(1)/2)):(location(2) + ceil(znacilka_velikost(1)/2) - 1), (location(1) - floor(znacilka_velikost(2)/2)):(location(1) + ceil(znacilka_velikost(2)/2) - 1),:,frame);
+    znacilka_hist_new = get_histogram(znacilka_new, hist_bins);
+    znacilka_hist = (1 - learning_rate) * znacilka_hist + learning_rate * znacilka_hist_new;
+    
+    new_frame = insertShape(squash(:,:,:,frame), 'circle',[location 20], 'Color', 'red','LineWidth', 2);
+    writeVideo(writer_object, new_frame);
+end
+
+close(writer_object);
+
+
+
+function histogram = get_histogram(image, num_bins)
+    step = 256/num_bins;
+    
+    R_idx = min(floor(image(:,:,1) / step) + 1, num_bins);
+    G_idx = min(floor(image(:,:,2) / step) + 1, num_bins);
+    B_idx = min(floor(image(:,:,3) / step) + 1, num_bins);
+    
+    rgb_bins = accumarray([R_idx(:), G_idx(:), B_idx(:)], 1, [num_bins num_bins num_bins]);
+
+    % histogram = round(rgb_bins / (max(rgb_bins(:))/255));
+    histogram = rgb_bins / sum(rgb_bins(:));
+end
+==== END Lovro Perme | Lovro Perme_26683_assignsubmission_file | CV_Vaja5.m ====
+
+
+==== BEGIN Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | doloci_igralca.m ====
+clc;
+clear;
+close all;
+
+% 1. NALOŽI VIDEO
+% ===============================
+video = VideoReader('squash.avi');
+
+firstFrame = readFrame(video);
+
+%% za rocno izbiro
+figure;
+imshow(firstFrame);
+title('Z dvema klikoma označi igralca');
+
+% 2. IZBIRA PREDLOGE
+% ===============================
+[x, y] = ginput(2);
+%% shranjena referenca
+x = [110; 121];
+y = [120; 131];
+%%
+x = round(x);
+y = round(y);
+
+x1 = min(x);
+x2 = max(x);
+y1 = min(y);
+y2 = max(y);
+
+w = x2 - x1;
+h = y2 - y1;
+
+templateRGB = firstFrame(y1:y2, x1:x2, :);
+template = rgb2gray(templateRGB);
+==== END Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | doloci_igralca.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | vaja1.m ====
+scales = [1/2, 1/4, 1/8];
+methods = {'nearest', 'bilinear', 'bilinear'};
+aa = [false, false, true];   % antialising izkljucn
+
+for m = 1:length(methods)
+    for s = 1:length(scales)
+
+        scale = scales(s);
+
+        vidIn = VideoReader('Holywood2-t00427-rgb.avi');
+
+        outName = sprintf('out_%s_AA%d_scale_%g.avi', ...
+                          methods{m}, aa(m), scale);
+
+        vidOut = VideoWriter(outName);
+        vidOut.FrameRate = vidIn.FrameRate;
+        open(vidOut);
+
+        while hasFrame(vidIn)
+            frame = readFrame(vidIn);
+
+            % pomanjšanje z imresize
+            frame_resized = imresize( ...
+                frame, scale, methods{m}, 'Antialiasing', aa(m));
+
+            writeVideo(vidOut, frame_resized);
+        end
+
+        close(vidOut);
+    end
+end
+==== END Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | vaja1.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | vaja2_1.m ====
+%% 2.1
+video = VideoReader('squash.avi');
+readFrame(video);   
+
+epsilon = 10;
+
+prevX = x1;
+prevY = y1;
+
+writer = VideoWriter('sledenje_L2.avi');
+open(writer);
+
+figure;
+imshow(firstFrame);
+hold on;
+rectangle('Position', [prevX prevY w h], ...
+          'EdgeColor', 'r', 'LineWidth', 2);
+hold off;
+
+F = getframe(gca);
+writeVideo(writer, F.cdata);
+
+while hasFrame(video)
+
+    frame = readFrame(video);
+    frameGray = rgb2gray(frame);
+
+    bestDist = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    xMin = max(1, prevX - epsilon);
+    xMax = min(size(frameGray,2) - w, prevX + epsilon);
+    yMin = max(1, prevY - epsilon);
+    yMax = min(size(frameGray,1) - h, prevY + epsilon);
+
+    for i = xMin:xMax
+        for j = yMin:yMax
+
+            patch = frameGray(j:j+h, i:i+w);
+
+            dist = sum((double(patch(:)) - double(template(:))).^2);
+
+            if dist < bestDist
+                bestDist = dist;
+                bestX = i;
+                bestY = j;
+            end
+        end
+    end
+
+    prevX = bestX;
+    prevY = bestY;
+
+    % izris
+    figure(1);
+    imshow(frame);
+    hold on;
+    rectangle('Position', [bestX bestY w h], ...
+              'EdgeColor', 'r', 'LineWidth', 2);
+    hold off;
+
+    F = getframe(gca);
+    writeVideo(writer, F.cdata);
+    drawnow;
+end
+
+close(writer);
+
+==== END Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | vaja2_1.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | vaja2_2.m ====
+%% 2.2
+video = VideoReader('squash.avi');
+readFrame(video);   
+
+prevX = x1;
+prevY = y1;
+
+writer = VideoWriter('sledenje_chi2.avi');
+open(writer);
+
+nbins = 32;
+templateHist = imhist(template, nbins);
+templateHist = templateHist / sum(templateHist);
+
+while hasFrame(video)
+
+    frame = readFrame(video);
+    frameGray = rgb2gray(frame);
+
+    bestDist = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    xMin = max(1, prevX - epsilon);
+    xMax = min(size(frameGray,2) - w, prevX + epsilon);
+    yMin = max(1, prevY - epsilon);
+    yMax = min(size(frameGray,1) - h, prevY + epsilon);
+
+    for i = xMin:xMax
+        for j = yMin:yMax
+
+            patch = frameGray(j:j+h, i:i+w);
+            patchHist = imhist(patch, nbins);
+            patchHist = patchHist / sum(patchHist);
+
+            dist = sum((templateHist - patchHist).^2 ./ ...
+                       (templateHist + patchHist + eps));
+
+            if dist < bestDist
+                bestDist = dist;
+                bestX = i;
+                bestY = j;
+            end
+        end
+    end
+
+    prevX = bestX;
+    prevY = bestY;
+
+    imshow(frame); hold on;
+    rectangle('Position',[bestX bestY w h], ...
+              'EdgeColor','r','LineWidth',2);
+    hold off;
+
+    F = getframe(gca);
+    writeVideo(writer, F.cdata);
+    drawnow;
+end
+
+close(writer);
+disp('Video uspešno shranjen: sledenje_chi2.avi');
+==== END Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | vaja2_2.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | vaja3.m ====
+epsilon = 10;
+nbins = 32;
+alpha = 0.05;   % hitrost učenja
+
+prevX = x1;
+prevY = y1;
+
+% referencni histogram
+templateHist = imhist(template, nbins);
+templateHist = templateHist / sum(templateHist);
+
+writer = VideoWriter('sledenje_chi2_ucenje.avi');
+open(writer);
+
+video = VideoReader('squash.avi');
+readFrame(video);
+
+while hasFrame(video)
+
+    frame = readFrame(video);
+    frameGray = rgb2gray(frame);
+
+    bestDist = inf;
+    bestX = prevX;
+    bestY = prevY;
+
+    xMin = max(1, prevX - epsilon);
+    xMax = min(size(frameGray,2) - w, prevX + epsilon);
+    yMin = max(1, prevY - epsilon);
+    yMax = min(size(frameGray,1) - h, prevY + epsilon);
+
+    for i = xMin:xMax
+        for j = yMin:yMax
+
+            patch = frameGray(j:j+h, i:i+w);
+            patchHist = imhist(patch, nbins);
+            patchHist = patchHist / sum(patchHist);
+
+            dist = sum((templateHist - patchHist).^2 ./ ...
+                       (templateHist + patchHist + eps));
+
+            if dist < bestDist
+                bestDist = dist;
+                bestX = i;
+                bestY = j;
+            end
+        end
+    end
+
+    % nova pozicija
+    prevX = bestX;
+    prevY = bestY;
+
+    % ucenje sproti
+    newPatch = frameGray(bestY:bestY+h, bestX:bestX+w);
+    newHist = imhist(newPatch, nbins);
+    newHist = newHist / sum(newHist);
+
+    templateHist = (1 - alpha)*templateHist + alpha*newHist;
+    templateHist = templateHist / sum(templateHist);
+
+    % plotanje
+    imshow(frame); hold on;
+    rectangle('Position',[bestX bestY w h], ...
+              'EdgeColor','r','LineWidth',2);
+    hold off;
+
+    F = getframe(gca);
+    writeVideo(writer, F.cdata);
+    drawnow;
+end
+
+close(writer);
+disp('Video uspešno shranjen: sledenje_chi2_ucenje.avi');
+==== END Nejc Ropič | Nejc Ropič_26692_assignsubmission_file | vaja3.m ====
+
+
+==== BEGIN Rok Prezelj | Rok Prezelj_26674_assignsubmission_file | main.m ====
+%% Naloga 1
+vidObjPath = "Holywood2-t00427-rgb.avi";
+
+vidNameNear = "1.near_";
+vidNameBilinear = "1.bilinear_";
+vidNameBilinearAliasing = "1.bilinearAliasing_";
+
+for scale = [0.5, 0.25, 0.125]
+
+    vidObj = VideoReader(vidObjPath);
+
+    vidNear = VideoWriter(vidNameNear + string(scale) + ".avi", "Motion JPEG AVI");
+    vidBilinear = VideoWriter(vidNameBilinear + string(scale) + ".avi", "Motion JPEG AVI");
+    vidBilinearAliasing = VideoWriter(vidNameBilinearAliasing + string(scale) + ".avi", "Motion JPEG AVI");
+
+    vidNear.FrameRate = vidObj.FrameRate;
+    vidBilinear.FrameRate = vidObj.FrameRate;
+    vidBilinearAliasing.FrameRate = vidObj.FrameRate;
+
+    open(vidNear);
+    open(vidBilinear);
+    open(vidBilinearAliasing);
+
+    while hasFrame(vidObj)
+        vidFrame = readFrame(vidObj);
+
+        frameNear = imresize(vidFrame, scale, "nearest");
+        frameBilinear = imresize(vidFrame, scale, "bilinear", "Antialiasing", false);
+        frameBilinearAliasing = imresize(vidFrame, scale, "bilinear", "Antialiasing", true);
+
+        writeVideo(vidNear, frameNear);
+        writeVideo(vidBilinear, frameBilinear);
+        writeVideo(vidBilinearAliasing, frameBilinearAliasing);
+    end
+
+    close(vidNear);
+    close(vidBilinear);
+    close(vidBilinearAliasing);
+end
+
+%% Izlocitev igrisca iz posnetka (median background + avtomatska ROI)
+vidObj = VideoReader("squash.avi");
+frames = [];
+idx = 1;
+
+while hasFrame(vidObj)
+    f = readFrame(vidObj);
+    frames(:,:,:,idx) = f;
+    idx = idx + 1;
+end
+
+court = uint8(round(median(frames, 4)));
+imshow(court)
+
+imwrite(court, "igrisce.png", "PNG");
+
+%% Naloga 2.0
+vidObj = VideoReader("squash.avi");
+vidFrame = readFrame(vidObj);
+
+% Bounding box igralca
+% imshow(vidFrame);
+% title("Klikni meje pravokotnika igralca.");
+% [x, y] = ginput(2)
+% close(vidObj)
+x = [91; 63]; y = [96; 82]; % Bel igralec
+% x = [95; 120]; y = [135; 116]; % Rdec igralec
+x_min = round(min(x));
+x_max = round(max(x));
+y_min = round(min(y));
+y_max = round(max(y));
+
+% Pozicija igralca
+x_i_original = round((x_min + x_max) / 2);
+y_i_original = round((y_min + y_max) / 2);
+
+%% Naloga 2.1 – primerjanje s predlogo, Evklidska razdalja
+vidObj = VideoReader("squash.avi");
+
+igrisce = double(imread("igrisce.png"));
+piksliIgralca = double(vidFrame(y_min:y_max, x_min:x_max, :));
+piksliIgralcaBrezIgrisca = double(piksliIgralca) - double(igrisce(y_min:y_max, x_min:x_max, :));
+
+% Template ki ga bomo iskali na video posneku/frameih.
+template = double(piksliIgralcaBrezIgrisca);
+
+% Velikost območja ki ga bomo iskali. bbox + epsilon
+epsilon_x = 20;
+epsilon_y = 15;
+
+% Velikost igralca v pikslih
+bbox_h = size(template, 1);
+bbox_w = size(template, 2);
+
+cx_off = floor(bbox_w/2);
+cy_off = floor(bbox_h/2);
+
+writer = VideoWriter("2.1.Evklidska-bel.avi", "Motion JPEG AVI");
+writer.FrameRate = vidObj.FrameRate;
+open(writer);
+
+x_i = x_i_original;
+y_i = y_i_original;
+
+while hasFrame(vidObj)
+    frame = double(readFrame(vidObj));
+    frameBrezIgrisca = frame - igrisce;
+
+    H = size(frameBrezIgrisca, 1);
+    W = size(frameBrezIgrisca, 2);
+
+    % Area in which we search for the player (top-left corner search range)
+    x_search_min = max(1, x_i - cx_off - epsilon_x);
+    x_search_max = min(W - bbox_w + 1, x_i - cx_off + epsilon_x);
+
+    y_search_min = max(1, y_i - cy_off - epsilon_y);
+    y_search_max = min(H - bbox_h + 1, y_i - cy_off + epsilon_y);
+
+    best_dist = Inf;
+    best_x_i = x_i;
+    best_y_i = y_i;
+
+    for y = y_search_min:y_search_max
+        for x = x_search_min:x_search_max
+            patch = frameBrezIgrisca(y:y+bbox_h-1, x:x+bbox_w-1, :);
+            diff = patch - template;
+            dist = sum(diff(:).^2);
+
+            if dist < best_dist
+                best_dist = dist;
+                best_x_i = x + cx_off;
+                best_y_i = y + cy_off;
+            end
+        end
+    end
+
+    x_i = best_x_i;
+    y_i = best_y_i;
+
+    imshow(uint8(frame));
+    rectangle('Position', [x_i - cx_off, y_i - cy_off, bbox_w, bbox_h], ...
+              'EdgeColor', 'r', 'LineWidth', 2);
+    drawnow;
+
+    fr = getframe(gca);
+    writeVideo(writer, fr.cdata);
+end
+close(writer)
+
+%% Naloga 2.2 Histogram (chi-square)
+vidObj = VideoReader("squash.avi");
+
+igrisce = double(imread("igrisce.png"));
+piksliIgralca = double(vidFrame(y_min:y_max, x_min:x_max, :));
+
+bbox_h = size(piksliIgralca, 1);
+bbox_w = size(piksliIgralca, 2);
+
+templateDiff = abs(piksliIgralca - igrisce(y_min:y_max, x_min:x_max, :));
+templateGray = rgb2gray(uint8(templateDiff));
+
+nbins = 64;
+templateHist = imhist(templateGray, nbins);
+templateHist = templateHist / (sum(templateHist) + eps);
+
+epsilon_x = 20;
+epsilon_y = 15;
+
+cx_off = floor(bbox_w/2);
+cy_off = floor(bbox_h/2);
+
+writer = VideoWriter("2.2.Histogram-bel.avi", "Motion JPEG AVI");
+writer.FrameRate = vidObj.FrameRate;
+open(writer);
+
+x_i = x_i_original;
+y_i = y_i_original;
+
+while hasFrame(vidObj)
+    frame = double(readFrame(vidObj));
+
+    % Odštej igrišče (spet: abs razlika)
+    frameDiff = abs(frame - igrisce);
+
+    H = size(frameDiff, 1);
+    W = size(frameDiff, 2);
+
+    % Lokalno iskanje (top-left koordinata izseka)
+    x_search_min = max(1, x_i - cx_off - epsilon_x);
+    x_search_max = min(W - bbox_w + 1, x_i - cx_off + epsilon_x);
+
+    y_search_min = max(1, y_i - cy_off - epsilon_y);
+    y_search_max = min(H - bbox_h + 1, y_i - cy_off + epsilon_y);
+
+    best_dist = Inf;
+    best_x_i = x_i;
+    best_y_i = y_i;
+
+    for y = y_search_min:y_search_max
+        for x = x_search_min:x_search_max
+
+            patch = frameDiff(y:y+bbox_h-1, x:x+bbox_w-1, :);
+            patchGray = rgb2gray(uint8(patch));
+
+            hPatch = imhist(patchGray, nbins);
+            hPatch = hPatch / (sum(hPatch) + eps);
+
+            % χ² razdalja (stabilna verzija)
+            dist = sum((hPatch - templateHist).^2 ./ (hPatch + templateHist + eps));
+
+            if dist < best_dist
+                best_dist = dist;
+                best_x_i = x + cx_off;
+                best_y_i = y + cy_off;
+            end
+        end
+    end
+
+    x_i = best_x_i;
+    y_i = best_y_i;
+
+    imshow(uint8(frame));
+    rectangle('Position', [x_i - cx_off, y_i - cy_off, bbox_w, bbox_h], ...
+              'EdgeColor', 'r', 'LineWidth', 2);
+    drawnow;
+
+    fr = getframe(gca);
+    writeVideo(writer, fr.cdata);
+end
+
+%% Naloga 3
+vidObj = VideoReader("squash.avi");
+
+igrisce = double(imread("igrisce.png"));
+piksliIgralca = double(vidFrame(y_min:y_max, x_min:x_max, :));
+
+bbox_h = size(piksliIgralca, 1);
+bbox_w = size(piksliIgralca, 2);
+
+templateDiff = abs(piksliIgralca - igrisce(y_min:y_max, x_min:x_max, :));
+templateGray = rgb2gray(uint8(templateDiff));
+
+nbins = 64;
+templateHist = imhist(templateGray, nbins);
+templateHist = templateHist / (sum(templateHist) + eps);
+originalTemlpateHist = templateHist;
+
+epsilon_x = 20;
+epsilon_y = 15;
+
+cx_off = floor(bbox_w/2);
+cy_off = floor(bbox_h/2);
+
+writer = VideoWriter("3.Sprotno_ucenje-bel.avi", "Motion JPEG AVI");
+writer.FrameRate = vidObj.FrameRate;
+open(writer);
+
+x_i = x_i_original;
+y_i = y_i_original;
+
+while hasFrame(vidObj)
+    frame = double(readFrame(vidObj));
+
+    % Odštej igrišče (spet: abs razlika)
+    frameDiff = abs(frame - igrisce);
+
+    H = size(frameDiff, 1);
+    W = size(frameDiff, 2);
+
+    % Lokalno iskanje (top-left koordinata izseka)
+    x_search_min = max(1, x_i - cx_off - epsilon_x);
+    x_search_max = min(W - bbox_w + 1, x_i - cx_off + epsilon_x);
+
+    y_search_min = max(1, y_i - cy_off - epsilon_y);
+    y_search_max = min(H - bbox_h + 1, y_i - cy_off + epsilon_y);
+
+    best_dist = Inf;
+    best_x_i = x_i;
+    best_y_i = y_i;
+
+    for y = y_search_min:y_search_max
+        for x = x_search_min:x_search_max
+
+            patch = frameDiff(y:y+bbox_h-1, x:x+bbox_w-1, :);
+            patchGray = rgb2gray(uint8(patch));
+
+            hPatch = imhist(patchGray, nbins);
+            hPatch = hPatch / (sum(hPatch) + eps);
+
+            % χ² razdalja (stabilna verzija)
+            dist = sum((hPatch - templateHist).^2 ./ (hPatch + templateHist + eps));
+
+            if dist < best_dist
+                bestHist = hPatch;
+                best_dist = dist;
+                best_x_i = x + cx_off;
+                best_y_i = y + cy_off;
+            end
+        end
+    end
+
+    x_i = best_x_i;
+    y_i = best_y_i;
+
+    templateHist = (bestHist + originalTemlpateHist)/2;
+
+    imshow(uint8(frame));
+    rectangle('Position', [x_i - cx_off, y_i - cy_off, bbox_w, bbox_h], ...
+              'EdgeColor', 'r', 'LineWidth', 2);
+    drawnow;
+
+    fr = getframe(gca);
+    writeVideo(writer, fr.cdata);
+end
+==== END Rok Prezelj | Rok Prezelj_26674_assignsubmission_file | main.m ====
+
+
+==== BEGIN Teodora Tanurkova | Teodora Tanurkova_26678_assignsubmission_file | vaja5.m ====
+%% Naloga 1
+Video = VideoReader('HolywoodPosnetek.avi');
+IzhodniVidNN1 = VideoWriter('HolywoodPosnetekNN1');
+IzhodniVidNN2 = VideoWriter('HolywoodPosnetekNN2');
+IzhodniVidNN3 = VideoWriter('HolywoodPosnetekNN3');
+open(IzhodniVidNN1);
+open(IzhodniVidNN2);
+open(IzhodniVidNN3);
+
+IzhodniVidBAOF1 = VideoWriter('HolywoodPosnetekBAOF1');
+IzhodniVidBAOF2 = VideoWriter('HolywoodPosnetekBAOF2');
+IzhodniVidBAOF3 = VideoWriter('HolywoodPosnetekBAOF3');
+open(IzhodniVidBAOF1);
+open(IzhodniVidBAOF2);
+open(IzhodniVidBAOF3);
+
+IzhodniVidBAON1 = VideoWriter('HolywoodPosnetekBAON1');
+IzhodniVidBAON2 = VideoWriter('HolywoodPosnetekBAON2');
+IzhodniVidBAON3 = VideoWriter('HolywoodPosnetekBAON3');
+open(IzhodniVidBAON1);
+open(IzhodniVidBAON2);
+open(IzhodniVidBAON3);
+
+faktor = [0.5 0.25 0.125];
+
+while hasFrame(Video)
+
+    frame = readFrame(Video);
+    
+    for i = 1:numel(faktor)
+        if i == 1
+           FrameResizeNN = imresize(frame, faktor(i),"nearest");
+           writeVideo(IzhodniVidNN1,FrameResizeNN);
+
+           FrameResizeBAOF = imresize(frame, faktor(i),"bilinear","Antialiasing", false);
+           writeVideo(IzhodniVidBAOF1,FrameResizeBAOF);
+
+           FrameResizeBAON = imresize(frame, faktor(i),"bilinear","Antialiasing", true);
+           writeVideo(IzhodniVidBAON1,FrameResizeBAON);
+
+        elseif i==2
+            FrameResizeNN = imresize(frame, faktor(i),"nearest");
+            writeVideo(IzhodniVidNN2,FrameResizeNN);
+
+            FrameResizeBAOF = imresize(frame, faktor(i),"bilinear","Antialiasing", false);
+            writeVideo(IzhodniVidBAOF2,FrameResizeBAOF);
+
+            FrameResizeBAON = imresize(frame, faktor(i),"bilinear","Antialiasing", true);
+            writeVideo(IzhodniVidBAON2,FrameResizeBAON);
+            
+        else
+            FrameResizeNN = imresize(frame, faktor(i),"nearest");
+            writeVideo(IzhodniVidNN3,FrameResizeNN);
+
+            FrameResizeBAOF = imresize(frame, faktor(i),"bilinear","Antialiasing", false);
+            writeVideo(IzhodniVidBAOF3,FrameResizeBAOF);
+
+            FrameResizeBAON = imresize(frame, faktor(i),"bilinear","Antialiasing", true);
+            writeVideo(IzhodniVidBAON3,FrameResizeBAON);
+        end
+    end
+end
+close(IzhodniVidNN1);
+close(IzhodniVidNN2);
+close(IzhodniVidNN3);
+
+close(IzhodniVidBAOF1);
+close(IzhodniVidBAOF2);
+close(IzhodniVidBAOF3);
+
+close(IzhodniVidBAON1);
+close(IzhodniVidBAON2);
+close(IzhodniVidBAON3);
+
+%% Naloga 2
+% evklidska razdalja
+
+Video2 = VideoReader('squash5.avi');
+vsiOkviri = Video2.NumFrames;
+
+frame1 = read(Video2, 1);
+figure; 
+imshow(frame1);
+title('Izberi igralca evklid');
+
+[znacilkaRGB, bbox] = imcrop(frame1);   
+bbox = round(bbox);
+
+znacilka = rgb2gray(znacilkaRGB);
+w = bbox(3); %sirina
+h = bbox(4); %visina
+
+eps = 18;           % okolica iskanja
+
+out = VideoWriter('squash_EVKLID.avi');
+open(out);
+
+for k = 1:vsiOkviri
+
+    frame = read(Video2, k);
+    gray  = rgb2gray(frame);
+
+    xMin = max(1, bbox(1) - eps);
+    yMin = max(1, bbox(2) - eps);
+    xMax = min(size(gray,2) - w + 1, bbox(1) + eps);
+    yMax = min(size(gray,1) - h + 1, bbox(2) + eps);
+
+    bestD = inf;
+
+    for y = yMin:yMax
+        for x = xMin:xMax
+            Dolocenizsek = gray(y:y+h-1, x:x+w-1);
+            dif = double(Dolocenizsek) - double(znacilka);
+            d = sum(dif(:).^2);
+
+            if d < bestD
+                bestD = d;
+                bbox(1) = x;
+                bbox(2) = y;
+            end
+        end
+    end
+
+    frameOut = insertShape(frame, 'Rectangle', bbox, 'LineWidth', 2);
+    writeVideo(out, frameOut);
+end
+
+close(out);
+%% Naloga 2 chi^2
+
+Video3 = VideoReader('squash5.avi');
+vsiOkviri3 = Video3.NumFrames;
+
+frame1 = read(Video3, 1);
+figure;
+imshow(frame1);
+title('Izberi igralca (chi^2)');
+
+[znacilkaRGB3, bbox3] = imcrop(frame1);
+bbox3 = round(bbox3);
+
+znacilka3 = rgb2gray(znacilkaRGB3);
+w3 = bbox3(3);      % širina
+h3 = bbox3(4);      % višina
+
+eps2  = 18;         % okolica iskanja
+nbins = 32;         % št. binov histograma
+binSize = 256 / nbins;
+
+refHist = myHistGray(znacilka3, nbins, binSize);   % 1×nbins
+refHist = refHist / sum(refHist);
+
+out3 = VideoWriter('squash_CHI2.avi');
+open(out3);
+
+for k = 1:vsiOkviri3
+
+    frame = read(Video3, k);
+    gray  = rgb2gray(frame);
+
+    xMin = max(1, bbox3(1) - eps2);
+    yMin = max(1, bbox3(2) - eps2);
+    xMax = min(size(gray,2) - w3 + 1, bbox3(1) + eps2);
+    yMax = min(size(gray,1) - h3 + 1, bbox3(2) + eps2);
+
+    bestD = inf;
+
+    for y = yMin:yMax
+        for x = xMin:xMax
+
+            izsek = gray(y:y+h3-1, x:x+w3-1);
+
+            hst = myHistGray(izsek, nbins, binSize);
+            hst = hst / sum(hst);
+
+            d = 0.5*sum(((refHist - hst).^2) ./ (refHist + hst + 1e-10));
+
+            if d < bestD
+                bestD = d;
+                bbox3(1) = x;
+                bbox3(2) = y;
+            end
+        end
+    end
+
+    frameOut = insertShape(frame, 'Rectangle', bbox3, 'LineWidth', 2);
+    writeVideo(out3, frameOut);
+end
+
+close(out3);
+
+%% funkcija histogram sivinske slike
+function h = myHistGray(I, nbins, binSize)
+    h = zeros(1, nbins);
+    pixels = I(:);
+
+    for i = 1:numel(pixels)
+        bin = floor(double(pixels(i)) / binSize) + 1;
+        if bin > nbins
+            bin = nbins;
+        end
+        h(bin) = h(bin) + 1;
+    end
+end
+==== END Teodora Tanurkova | Teodora Tanurkova_26678_assignsubmission_file | vaja5.m ====
+
+==== BEGIN Teodora Tanurkova | Teodora Tanurkova_26678_assignsubmission_file | vaja5_naloga3.m ====
+%% Naloga 3 evklidska razd
+
+Video2 = VideoReader('squash5.avi');
+vsiOkviri = Video2.NumFrames;
+
+frame1 = read(Video2,1);
+figure;
+imshow(frame1);
+title('Izberi igralca (Naloga 3 – L2)');
+
+[znacilkaRGB, bbox] = imcrop(frame1);
+bbox = round(bbox);
+
+znacilka = rgb2gray(znacilkaRGB);
+w = bbox(3);
+h = bbox(4);
+
+eps = 20;
+
+out = VideoWriter('squash_EVKLIDNaloga3.avi');
+open(out);
+
+for k = 1:vsiOkviri
+    frame = read(Video2, k);
+    gray  = rgb2gray(frame);
+
+    xMin = max(1, bbox(1) - eps);
+    yMin = max(1, bbox(2) - eps);
+    xMax = min(size(gray,2)-w+1, bbox(1)+eps);
+    yMax = min(size(gray,1)-h+1, bbox(2)+eps);
+
+    bestD = inf;
+
+    for y = yMin:yMax
+        for x = xMin:xMax
+            izsek = gray(y:y+h-1, x:x+w-1);
+            dif = double(izsek) - double(znacilka);
+            d = sum(dif(:).^2);
+
+            if d < bestD
+                bestD = d;
+                bbox(1) = x;
+                bbox(2) = y;
+            end
+        end
+    end
+
+    znacilka = gray(bbox(2):bbox(2)+h-1, bbox(1):bbox(1)+w-1);
+
+    frameOut = insertShape(frame, 'Rectangle', bbox, 'LineWidth', 2);
+    writeVideo(out, frameOut);
+end
+
+close(out);
+
+%% Naloga 3 
+
+Video3 = VideoReader('squash5.avi');
+vsiOkviri3 = Video3.NumFrames;
+
+% 1) Prva slika + izbor igralca
+frame1 = read(Video3, 1);
+figure; 
+imshow(frame1);
+title('Izberi igralca (Naloga 3 – χ^2)');
+
+[znacilkaRGB3, bbox3] = imcrop(frame1);
+bbox3 = round(bbox3);
+
+znacilka3 = rgb2gray(znacilkaRGB3);
+w3 = bbox3(3);
+h3 = bbox3(4);
+
+eps3 = 18;
+nbins = 32;
+binSize = 256 / nbins;
+
+refHist = myHistGray(znacilka3, nbins, binSize);
+refHist = refHist / sum(refHist);
+
+out3 = VideoWriter('squash_CHI2Naloga3.avi');
+open(out3);
+
+for k = 1:vsiOkviri3
+
+    frame = read(Video3, k);
+    gray  = rgb2gray(frame);
+
+    xMin = max(1, bbox3(1) - eps3);
+    yMin = max(1, bbox3(2) - eps3);
+    xMax = min(size(gray,2) - w3 + 1, bbox3(1) + eps3);
+    yMax = min(size(gray,1) - h3 + 1, bbox3(2) + eps3);
+
+    bestD = inf;
+
+    for y = yMin:yMax
+        for x = xMin:xMax
+            izsek = gray(y:y+h3-1, x:x+w3-1);
+
+            hst = myHistGray(izsek, nbins, binSize);
+            hst = hst / sum(hst);
+
+            d = 0.5 * sum(((refHist - hst).^2) ./ (refHist + hst + 1e-10));
+
+            if d < bestD
+                bestD = d;
+                bbox3(1) = x;
+                bbox3(2) = y;
+            end
+        end
+    end
+
+    noviIzsek = gray(bbox3(2):bbox3(2)+h3-1, bbox3(1):bbox3(1)+w3-1);
+    refHist = myHistGray(noviIzsek, nbins, binSize);
+    refHist = refHist / sum(refHist);
+
+    frameOut = insertShape(frame, 'Rectangle', bbox3, 'LineWidth', 2);
+    writeVideo(out3, frameOut);
+end
+
+close(out3);
+
+%% ročni histogram sivinske slike 
+function h = myHistGray(I, nbins, binSize)
+    h = zeros(1, nbins);
+    pixels = I(:);
+
+    for i = 1:numel(pixels)
+        bin = floor(double(pixels(i)) / binSize) + 1;
+        if bin > nbins
+            bin = nbins;
+        end
+        h(bin) = h(bin) + 1;
+    end
+end
+==== END Teodora Tanurkova | Teodora Tanurkova_26678_assignsubmission_file | vaja5_naloga3.m ====
+
+
+==== BEGIN Timotej Topčievski | Timotej Topčievski_26690_assignsubmission_file | vaja5_3.m ====
+%% Naloga 1
+clear; clc; close all;
+
+inFile = 'Holywood.avi';  
+outDir = 'Naloga1';
+if ~exist(outDir, 'dir'), mkdir(outDir); end
+
+coeff = [0.5, 0.25, 0.125];
+s
+configs = {
+    % name,      method,     antialias
+    'nearest',   'nearest',   [];    
+    'bilinear', 'bilinear',  false;
+    'bilinear_AA', 'bilinear',  true;
+};
+
+for si = 1:numel(coeff)
+    s = coeff(si);
+
+    for ci = 1:size(configs,1)
+        tag   = configs{ci,1};
+        meth  = configs{ci,2};
+        AA    = configs{ci,3};
+
+        outFile = fullfile(outDir, sprintf('Holywood_scale_%g_%s.avi', s, tag));
+        fprintf('Making: %s\n', outFile);
+
+        make_resized_video(inFile, outFile, s, meth, AA);
+    end
+end
+
+disp('Done!');
+
+%% Naloga 2
+clear; clc; close all;
+
+v  = VideoReader("squash.avi");
+V0 = read(v, [1 Inf]);                 
+H = size(V0,1); W = size(V0,2); N = size(V0,4);
+
+imshow(V0(:,:,:,1)); title("Klikni igralca (1x)");
+p = ginput(1); close;
+
+half = 4;                               
+w0 = 2*half;  h0 = 2*half;
+x0 = round(p(1) - half);
+y0 = round(p(2) - half);
+
+x0 = min(max(x0,1), W-w0);
+y0 = min(max(y0,1), H-h0);
+
+epsilon = 16;                           
+marker  = 8;                            
+
+nbins = 8;                              
+binw  = 256/nbins;
+
+%% 2.1
+V = V0;
+
+x = x0; y = y0; w = w0; h = h0;
+tmpl = double(V(y:y+h, x:x+w, :, 1));    
+
+for i = 1:N
+    frame = double(V(:,:,:,i));
+
+    bestD = inf; bestx = x; besty = y;
+
+    x1 = max(1, x - epsilon); x2 = min(W-w, x + epsilon);
+    y1 = max(1, y - epsilon); y2 = min(H-h, y + epsilon);
+
+    for xx = x1:x2
+        for yy = y1:y2
+            patch = frame(yy:yy+h, xx:xx+w, :);
+            d = sum((patch(:) - tmpl(:)).^2);   
+            if d < bestD
+                bestD = d; bestx = xx; besty = yy;
+            end
+        end
+    end
+
+    x = bestx; y = besty;
+
+    % marker (moder)
+    cx = round(x + w/2); cy = round(y + h/2);
+    r1 = max(1, cy-floor(marker/2)); r2 = min(H, cy+floor(marker/2));
+    c1 = max(1, cx-floor(marker/2)); c2 = min(W, cx+floor(marker/2));
+    V(r1:r2, c1:c2, 1, i) = 0;
+    V(r1:r2, c1:c2, 2, i) = 0;
+    V(r1:r2, c1:c2, 3, i) = 255;
+end
+
+wrt = VideoWriter("naloga2_1.avi");
+open(wrt); writeVideo(wrt, V); close(wrt);
+
+%% 2.2
+V = V0;
+
+x = x0; y = y0; w = w0; h = h0;
+
+refPatch = V(y:y+h, x:x+w, :, 1);
+R = floor(double(refPatch(:,:,1))/binw);
+G = floor(double(refPatch(:,:,2))/binw);
+B = floor(double(refPatch(:,:,3))/binw);
+R = min(max(R,0),nbins-1);
+G = min(max(G,0),nbins-1);
+B = min(max(B,0),nbins-1);
+idx = R*nbins*nbins + G*nbins + B;                 
+histRef = histcounts(idx(:), 0:(nbins^3));         
+histRef = histRef / (sum(histRef) + eps);
+
+for i = 1:N
+    frame = V(:,:,:,i);
+
+    bestD = inf; bestx = x; besty = y;
+
+    x1 = max(1, x - epsilon); x2 = min(W-w, x + epsilon);
+    y1 = max(1, y - epsilon); y2 = min(H-h, y + epsilon);
+
+    for xx = x1:x2
+        for yy = y1:y2
+            patch = frame(yy:yy+h, xx:xx+w, :);
+
+            R = floor(double(patch(:,:,1))/binw);
+            G = floor(double(patch(:,:,2))/binw);
+            B = floor(double(patch(:,:,3))/binw);
+            R = min(max(R,0),nbins-1);
+            G = min(max(G,0),nbins-1);
+            B = min(max(B,0),nbins-1);
+
+            idx = R*nbins*nbins + G*nbins + B;
+            h2  = histcounts(idx(:), 0:(nbins^3));
+            h2  = h2 / (sum(h2) + eps);
+
+            d = sum((h2 - histRef).^2);
+
+            if d < bestD
+                bestD = d; bestx = xx; besty = yy;
+            end
+        end
+    end
+
+    x = bestx; y = besty;
+
+    % marker (zelen)
+    cx = round(x + w/2); cy = round(y + h/2);
+    r1 = max(1, cy-floor(marker/2)); r2 = min(H, cy+floor(marker/2));
+    c1 = max(1, cx-floor(marker/2)); c2 = min(W, cx+floor(marker/2));
+    V(r1:r2, c1:c2, 1, i) = 0;
+    V(r1:r2, c1:c2, 2, i) = 255;
+    V(r1:r2, c1:c2, 3, i) = 0;
+end
+
+wrt = VideoWriter("naloga2_2.avi");
+open(wrt); writeVideo(wrt, V); close(wrt);
+
+
+%% Naloga 3
+clear; clc; close all;
+
+v  = VideoReader("squash.avi");
+V0 = read(v, [1 Inf]);                 
+H = size(V0,1); W = size(V0,2); N = size(V0,4);
+
+imshow(V0(:,:,:,1)); title("Klikni igralca (1x)");
+p = ginput(1); close;
+
+half = 4;                               
+w0 = 2*half;  h0 = 2*half;
+x0 = round(p(1) - half);
+y0 = round(p(2) - half);
+
+x0 = min(max(x0,1), W-w0);
+y0 = min(max(y0,1), H-h0);
+
+epsilon = 16;
+marker  = 8;
+
+nbins = 8;
+binw  = 256/nbins;
+
+%% 3.1
+V = V0;
+
+x = x0; y = y0; w = w0; h = h0;
+tmpl = double(V(y:y+h, x:x+w, :, 1));
+
+for i = 1:N
+    frame = double(V(:,:,:,i));
+
+    bestD = inf; bestx = x; besty = y;
+
+    x1 = max(1, x - epsilon); x2 = min(W-w, x + epsilon);
+    y1 = max(1, y - epsilon); y2 = min(H-h, y + epsilon);
+
+    for xx = x1:x2
+        for yy = y1:y2
+            patch = frame(yy:yy+h, xx:xx+w, :);
+            d = sum((patch(:) - tmpl(:)).^2);     
+            if d < bestD
+                bestD = d; bestx = xx; besty = yy;
+            end
+        end
+    end
+
+    x = bestx; y = besty;
+
+    tmpl = frame(y:y+h, x:x+w, :);
+
+    % marker (moder)
+    cx = round(x + w/2); cy = round(y + h/2);
+    r1 = max(1, cy-floor(marker/2)); r2 = min(H, cy+floor(marker/2));
+    c1 = max(1, cx-floor(marker/2)); c2 = min(W, cx+floor(marker/2));
+    V(r1:r2, c1:c2, 1, i) = 0;
+    V(r1:r2, c1:c2, 2, i) = 0;
+    V(r1:r2, c1:c2, 3, i) = 255;
+end
+
+wrt = VideoWriter("naloga3_sprotno.avi");
+open(wrt); writeVideo(wrt, V); close(wrt);
+
+
+%% 3.2
+V = V0;
+
+x = x0; y = y0; w = w0; h = h0;
+
+refPatch = V(y:y+h, x:x+w, :, 1);
+R = floor(double(refPatch(:,:,1))/binw);
+G = floor(double(refPatch(:,:,2))/binw);
+B = floor(double(refPatch(:,:,3))/binw);
+R = min(max(R,0),nbins-1);
+G = min(max(G,0),nbins-1);
+B = min(max(B,0),nbins-1);
+idx = R*nbins*nbins + G*nbins + B;
+histRef = histcounts(idx(:), 0:(nbins^3));
+histRef = histRef / (sum(histRef) + eps);
+
+for i = 1:N
+    frameU8 = V(:,:,:,i);              
+
+    bestD = inf; bestx = x; besty = y;
+    bestHist = histRef;
+
+    x1 = max(1, x - epsilon); x2 = min(W-w, x + epsilon);
+    y1 = max(1, y - epsilon); y2 = min(H-h, y + epsilon);
+
+    for xx = x1:x2
+        for yy = y1:y2
+            patch = frameU8(yy:yy+h, xx:xx+w, :);
+
+            R = floor(double(patch(:,:,1))/binw);
+            G = floor(double(patch(:,:,2))/binw);
+            B = floor(double(patch(:,:,3))/binw);
+            R = min(max(R,0),nbins-1);
+            G = min(max(G,0),nbins-1);
+            B = min(max(B,0),nbins-1);
+
+            idx = R*nbins*nbins + G*nbins + B;
+            h2  = histcounts(idx(:), 0:(nbins^3));
+            h2  = h2 / (sum(h2) + eps);
+
+            d = sum((h2 - histRef).^2);
+
+            if d < bestD
+                bestD = d; bestx = xx; besty = yy;
+                bestHist = h2;          
+            end
+        end
+    end
+
+    x = bestx; y = besty;
+
+  
+    histRef = bestHist;
+
+    % marker (zelen)
+    cx = round(x + w/2); cy = round(y + h/2);
+    r1 = max(1, cy-floor(marker/2)); r2 = min(H, cy+floor(marker/2));
+    c1 = max(1, cx-floor(marker/2)); c2 = min(W, cx+floor(marker/2));
+    V(r1:r2, c1:c2, 1, i) = 0;
+    V(r1:r2, c1:c2, 2, i) = 255;
+    V(r1:r2, c1:c2, 3, i) = 0;
+end
+
+wrt = VideoWriter("naloga3_hist_sprotno.avi");
+open(wrt); writeVideo(wrt, V); close(wrt);
+
+%% Funkcije
+     
+function make_resized_video(inFile, outFile, scale, method, antialiasFlag)
+    vr = VideoReader(inFile);
+
+    vw = VideoWriter(outFile, 'Motion JPEG AVI');
+    vw.FrameRate = vr.FrameRate;
+    open(vw);
+
+    while hasFrame(vr)
+        frame = readFrame(vr);
+
+        
+        if isempty(antialiasFlag)
+            frameSmall = imresize(frame, scale, method);
+        else
+            frameSmall = imresize(frame, scale, method, 'Antialiasing', antialiasFlag);
+        end
+
+        writeVideo(vw, frameSmall);
+    end
+
+    close(vw);
+end
+
+==== END Timotej Topčievski | Timotej Topčievski_26690_assignsubmission_file | vaja5_3.m ====
+
+
+==== BEGIN Tina Gutnik | Tina Gutnik_26691_assignsubmission_file | interpolacija.m ====
+function interpolacija(vhodni_video, izhodni_video, faktor_skaliranja, metoda)
+% uporabnik vnese ime vhodne datoteke, ime izhodne datoteke, faktor skaliranja in metodo interpolacije
+% imeni vhodne in izhodne datoteke sta tipa string
+% faktor skaliranja je številski npr. double
+% METODA MORA BITI PODANA NA ENEGA IZMED TEH TREH NAČINOV: 'nearest', 'bilinear_aa_off', 'bilinear_aa_on'
+
+
+    metoda = string(lower(metoda));             % lower za vsak slučaj naredi vnos neobčutljiv na male in velike črke
+    
+    video = VideoReader(vhodni_video);
+
+    interpoliran_video = VideoWriter(izhodni_video);
+    interpoliran_video.FrameRate = video.FrameRate;
+    open(interpoliran_video)
+
+    while hasFrame(video)
+        frame = readFrame(video);
+
+        if metoda == 'nearest'
+            interpoliran_frame = imresize(frame, faktor_skaliranja, 'nearest');
+
+        elseif metoda == 'bilinear_aa_off'
+            interpoliran_frame = imresize(frame, faktor_skaliranja, 'bilinear', 'Antialiasing', false);
+
+        elseif metoda == 'bilinear_aa_on'
+            interpoliran_frame = imresize(frame, faktor_skaliranja, 'bilinear', 'Antialiasing', true);
+        end
+            
+        writeVideo(interpoliran_video, interpoliran_frame);
+    end
+
+    close(interpoliran_video)
+end
+
+
+==== END Tina Gutnik | Tina Gutnik_26691_assignsubmission_file | interpolacija.m ====
+
+==== BEGIN Tina Gutnik | Tina Gutnik_26691_assignsubmission_file | lab_vaja_5.m ====
+% 1. naloga
+% najprej primerjamo kakovosti zgolj prvega frameja
+video = VideoReader('Holywood.avi');
+prvi_frame = read(video, 1);
+
+figure;
+imshow(prvi_frame); title('Prvi frame videoposnetka');
+
+s = 0.5;
+I_nn   = imresize(prvi_frame, s, 'nearest');
+I_bl_off = imresize(prvi_frame, s, 'bilinear', 'Antialiasing', false);
+I_bl_on  = imresize(prvi_frame, s, 'bilinear', 'Antialiasing', true);
+
+figure;
+subplot(1,3,1); imshow(I_nn); title('Najbližji sosed'); axis off
+subplot(1,3,2); imshow(I_bl_off); title('Bilinearna brez filtriranja'); axis off
+subplot(1,3,3); imshow(I_bl_on); title('Bilinearna s filtriranjem'); axis off
+
+% klicanje funkcije interpolacija, da dobimo 9 posnetkov
+interpolacija('Holywood.avi', 'I_nn_0.5.avi', 0.5, 'nearest')
+interpolacija('Holywood.avi', 'I_nn_0.25.avi', 0.25, 'nearest')
+interpolacija('Holywood.avi', 'I_nn_0.125.avi', 0.125, 'nearest')
+
+interpolacija('Holywood.avi', 'I_bl_off_0.5.avi', 0.5, 'bilinear_aa_off')
+interpolacija('Holywood.avi', 'I_bl_off_0.25.avi', 0.25, 'bilinear_aa_off')
+interpolacija('Holywood.avi', 'I_bl_off_0.125.avi', 0.125, 'bilinear_aa_off')
+
+interpolacija('Holywood.avi', 'I_bl_on_0.5.avi', 0.5, 'bilinear_aa_on')
+interpolacija('Holywood.avi', 'I_bl_on_0.25.avi', 0.25, 'bilinear_aa_on')
+interpolacija('Holywood.avi', 'I_bl_on_0.125.avi', 0.125, 'bilinear_aa_on')
+
+%% 2. naloga način 2.1
+video = VideoReader('squash.avi');
+prvi_frame = readFrame(video);
+
+figure;
+imshow(prvi_frame);
+title('Izberite levi zgornji rob pravokotnika okoli rdečega igralca in desni spodnji rob.');
+
+[x, y] = ginput(2);            % ginput shrani koordinati teh dveh klikov, nato izrišemo stranice
+x = round(x); y = round(y);    % da nimamo decimalnih indeksov stolpcev in vrstic
+x1 = min(x); y1 = min(y);
+x2 = max(x); y2 = max(y);
+
+[H, W, ~] = size(prvi_frame);
+x1 = max(1, min(W, x1)); x2 = max(1, min(W, x2));
+y1 = max(1, min(H, y1)); y2 = max(1, min(H, y2));
+
+hold on;
+plot([x1 x2], [y1 y1], 'Color', 'b');  
+plot([x1 x2], [y2 y2], 'Color', 'b'); 
+plot([x1 x1], [y1 y2], 'Color', 'b');  
+plot([x2 x2], [y1 y2], 'Color', 'b');  
+
+w = x2 - x1 + 1;               % širina pravokotnika
+h = y2 - y1 + 1;               % višina pravokotnika
+
+x = x1;
+y = y1;   % trenutna lokacija je točka zgoraj levo
+
+prvi_siv_frame = im2double(rgb2gray(prvi_frame));
+okvir_siv = prvi_siv_frame(y1:y2, x1:x2);
+okvir_siv_vektor = okvir_siv(:);
+
+okvir_siv_vektor = okvir_siv_vektor - mean(okvir_siv_vektor);
+okvir_siv_vektor = okvir_siv_vektor / (std(okvir_siv_vektor) + 1e-6);
+
+sigma = 0.35;
+[X, Y] = meshgrid(linspace(-1,1,w), linspace(-1,1,h));
+M = exp(-(X.^2 + Y.^2)/(2*sigma^2));
+M = M / sum(M(:));
+Mvec = M(:);
+
+
+novi_video = VideoWriter('squash_pravokotnik_L2.avi');
+novi_video.FrameRate = video.FrameRate;
+open(novi_video)
+
+izhodni_frame = insertShape(prvi_frame, 'rectangle', [x y w h]);
+writeVideo(novi_video, izhodni_frame);
+
+% sledenje po okvirjih
+eps = 20;
+while hasFrame(video)
+    frame_rgb = readFrame(video);
+    frame_siv = im2double(rgb2gray(frame_rgb));
+   
+    % določimo meje lokalne okolice
+    x_min = max(1, x - eps);
+    y_min = max(1, y - eps);
+    x_max = min(W - w + 1, x + eps);
+    y_max = min(H - h + 1, y + eps);
+
+    najmanjsa_razlika = inf;
+    najboljsi_x = x;
+    najboljsi_y = y;
+       
+    for yy = y_min:y_max
+        for xx = x_min:x_max
+            izsek_siv = frame_siv(yy:yy+h-1, xx:xx+w-1);
+            izsek_siv_vektor = izsek_siv(:);
+
+            izsek_siv_vektor = izsek_siv_vektor - mean(izsek_siv_vektor);
+            izsek_siv_vektor = izsek_siv_vektor / (std(izsek_siv_vektor) + 1e-6);
+
+            
+            d = okvir_siv_vektor - izsek_siv_vektor;
+            razlika = sum(Mvec .* (d.^2));
+            %razlika = d' * d;
+
+            if razlika < najmanjsa_razlika
+                najmanjsa_razlika = razlika;
+                najboljsi_x = xx;
+                najboljsi_y = yy;
+            end
+        end
+     end
+
+     x = najboljsi_x;
+     y = najboljsi_y;
+
+     izhodni_frame = insertShape(frame_rgb, 'rectangle', [x y w h]);
+     writeVideo(novi_video, izhodni_frame);
+end
+
+close(novi_video);     
+
+%% 2. naloga način 2.2
+video = VideoReader('squash.avi');
+prvi_frame = readFrame(video);
+
+figure;
+imshow(prvi_frame);
+title('Izberite levi zgornji rob pravokotnika okoli rdečega igralca in desni spodnji rob.');
+
+[x, y] = ginput(2);            % ginput shrani koordinati teh dveh klikov, nato izrišemo stranice
+x = round(x); y = round(y);    % da nimamo decimalnih indeksov stolpcev in vrstic
+x1 = min(x); y1 = min(y);
+x2 = max(x); y2 = max(y);
+
+[H, W, ~] = size(prvi_frame);
+x1 = max(1, min(W, x1)); x2 = max(1, min(W, x2));
+y1 = max(1, min(H, y1)); y2 = max(1, min(H, y2));
+
+hold on;
+plot([x1 x2], [y1 y1], 'Color', 'b');  
+plot([x1 x2], [y2 y2], 'Color', 'b'); 
+plot([x1 x1], [y1 y2], 'Color', 'b');  
+plot([x2 x2], [y1 y2], 'Color', 'b');  
+
+w = x2 - x1 + 1;               % širina pravokotnika
+h = y2 - y1 + 1;               % višina pravokotnika
+
+x = x1;
+y = y1;                        % trenutna lokacija je točka zgoraj levo
+
+% značilnica in histogram
+okvir_rgb = im2double(prvi_frame(y1:y2, x1:x2, :));
+okvir_hsv = rgb2hsv(okvir_rgb);
+
+okvir_H = okvir_hsv(:, :, 1);     
+
+st_binov = 16;
+robovi = linspace(0, 1, st_binov + 1);
+ref_H = histcounts(okvir_H(:), robovi);
+ref_H = ref_H / (sum(ref_H) + 1e-12);
+
+
+novi_video = VideoWriter('squash_pravokotnik_HSV.avi');
+novi_video.FrameRate = video.FrameRate;
+open(novi_video)
+
+izhodni_frame = insertShape(prvi_frame, 'rectangle', [x y w h]);
+writeVideo(novi_video, izhodni_frame);
+
+% sledenje po okvirjih
+eps = 25;
+while hasFrame(video) 
+    frame_rgb = readFrame(video);
+    frame_rgb = im2double(frame_rgb);
+    
+    
+    % določimo meje lokalne okolice
+    x_min = max(1, x - eps);
+    y_min = max(1, y - eps);
+    x_max = min(W - w + 1, x + eps);
+    y_max = min(H - h + 1, y + eps);
+
+    najmanjsa_razlika = inf;
+    najboljsi_x = x;
+    najboljsi_y = y;
+       
+    for yy = y_min:y_max
+        for xx = x_min:x_max
+            izsek_hsv = rgb2hsv(frame_rgb(yy:yy+h-1, xx:xx+w-1, :));
+
+            izsek_H = izsek_hsv(:,:,1);
+            
+            povp_H = histcounts(izsek_H(:), robovi);
+            povp_H = povp_H / (sum(povp_H) + 1e-12);
+
+            razlika = 0.5 * sum((ref_H - povp_H).^2 ./ (ref_H + povp_H + 1e-12));
+
+
+            if razlika < najmanjsa_razlika
+                najmanjsa_razlika = razlika;
+                najboljsi_x = xx;
+                najboljsi_y = yy;
+            end
+        end
+     end
+
+     x = najboljsi_x;
+     y = najboljsi_y;
+
+     izhodni_frame = insertShape(frame_rgb, 'rectangle', [x y w h]);
+     writeVideo(novi_video, izhodni_frame);
+end
+
+close(novi_video);     
+
+
+%% 3. naloga
+% pri načinu 2.2 že brez učenja celoten video pravilno pravokotnik sledi igralcu
+% zato sem z učenjem popravila način sledenja iz naloge 2.1
+
+video = VideoReader('squash.avi');
+prvi_frame = readFrame(video);
+
+figure;
+imshow(prvi_frame);
+title('Izberite levi zgornji rob pravokotnika okoli rdečega igralca in desni spodnji rob.');
+
+[x, y] = ginput(2);            % ginput shrani koordinati teh dveh klikov, nato izrišemo stranice
+x = round(x); y = round(y);    % da nimamo decimalnih indeksov stolpcev in vrstic
+x1 = min(x); y1 = min(y);
+x2 = max(x); y2 = max(y);
+
+[H, W, ~] = size(prvi_frame);
+x1 = max(1, min(W, x1)); x2 = max(1, min(W, x2));
+y1 = max(1, min(H, y1)); y2 = max(1, min(H, y2));
+
+hold on;
+plot([x1 x2], [y1 y1], 'Color', 'b');  
+plot([x1 x2], [y2 y2], 'Color', 'b'); 
+plot([x1 x1], [y1 y2], 'Color', 'b');  
+plot([x2 x2], [y1 y2], 'Color', 'b');  
+
+w = x2 - x1 + 1;               % širina pravokotnika
+h = y2 - y1 + 1;               % višina pravokotnika
+
+x = x1;
+y = y1;   % trenutna lokacija je točka zgoraj levo
+
+prvi_siv_frame = im2double(rgb2gray(prvi_frame));
+okvir_siv = prvi_siv_frame(y1:y2, x1:x2);
+okvir_siv_vektor = okvir_siv(:);
+
+okvir_siv_vektor = okvir_siv_vektor - mean(okvir_siv_vektor);
+okvir_siv_vektor = okvir_siv_vektor / (std(okvir_siv_vektor) + 1e-6);
+
+sigma = 0.35;
+[X, Y] = meshgrid(linspace(-1,1,w), linspace(-1,1,h));
+M = exp(-(X.^2 + Y.^2)/(2*sigma^2));
+M = M / sum(M(:));
+Mvec = M(:);
+
+
+novi_video = VideoWriter('squash_pravokotnik_L2_po_ucenju1.avi');
+novi_video.FrameRate = video.FrameRate;
+open(novi_video)
+
+izhodni_frame = insertShape(prvi_frame, 'rectangle', [x y w h]);
+writeVideo(novi_video, izhodni_frame);
+
+alpha = 0.02;   % hitrost učenja (0.01..0.05)
+tau   = 5;      % prag zaupanja (manjši je strožje)
+eps = 25;
+% sledenje po okvirjih
+vx = 0; vy = 0;          % hitrost (v px/frame)
+beta = 0.7;              % glajenje hitrosti (0.5..0.9)
+eps_min = 20;
+eps_max = 80;
+
+while hasFrame(video)
+    frame_rgb = readFrame(video);
+    frame_siv = im2double(rgb2gray(frame_rgb));
+   
+    x_pred = round(x + vx);
+    y_pred = round(y + vy);
+    x_pred = max(1, min(W - w + 1, x_pred));
+    y_pred = max(1, min(H - h + 1, y_pred));
+    % določimo meje lokalne okolice
+    x_min = max(1, x_pred - eps);
+    y_min = max(1, y_pred - eps);
+    x_max = min(W - w + 1, x_pred + eps);
+    y_max = min(H - h + 1, y_pred + eps);
+
+    najmanjsa_razlika = inf;
+    najboljsi_x = x;
+    najboljsi_y = y;
+    
+    vx_new = najboljsi_x - x;
+    vy_new = najboljsi_y - y;
+    vx = beta*vx + (1-beta)*vx_new;
+    vy = beta*vy + (1-beta)*vy_new;
+    
+    % sprotno učenje
+    bestPatchVec = okvir_siv_vektor;  % tu si shranimo najboljsi izsek (normaliziran vektor)
+   
+       
+    for yy = y_min:y_max
+        for xx = x_min:x_max
+            izsek_siv = frame_siv(yy:yy+h-1, xx:xx+w-1);
+            izsek_siv_vektor = izsek_siv(:);
+
+            izsek_siv_vektor = izsek_siv_vektor - mean(izsek_siv_vektor);
+            izsek_siv_vektor = izsek_siv_vektor / (std(izsek_siv_vektor) + 1e-6);
+
+            d = okvir_siv_vektor - izsek_siv_vektor;
+            razlika = sum(Mvec .* (d.^2));
+
+            lambda = 0.02;
+            pen = lambda * ((xx - x)^2 + (yy - y)^2);
+            score = razlika + pen;
+            
+            if score < najmanjsa_razlika
+                najmanjsa_razlika = score;
+                najboljsi_x = xx;
+                najboljsi_y = yy;
+                bestPatchVec = izsek_siv_vektor; % če uporabljaš učenje
+            end
+        end
+     end
+
+     
+     % če je ujemanje sumljivo slabo, ne posodabljaj in ne premikaj
+     if najmanjsa_razlika > tau
+         najboljsi_x = x;
+         najboljsi_y = y;
+     else
+         % če je ujemanje dobro -> posodobi značilnico 
+         okvir_siv_vektor = (1-alpha)*okvir_siv_vektor + alpha*bestPatchVec;
+
+         % po posodobitvi spet normaliziraj
+         okvir_siv_vektor = okvir_siv_vektor - mean(okvir_siv_vektor);
+         okvir_siv_vektor = okvir_siv_vektor / (std(okvir_siv_vektor) + 1e-6);
+     end
+
+     x = najboljsi_x;
+     y = najboljsi_y;
+
+     izhodni_frame = insertShape(frame_rgb, 'rectangle', [x y w h]);
+     writeVideo(novi_video, izhodni_frame);
+end
+
+close(novi_video);
+
+
+==== END Tina Gutnik | Tina Gutnik_26691_assignsubmission_file | lab_vaja_5.m ====
+

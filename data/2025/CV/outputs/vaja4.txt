@@ -1,0 +1,5897 @@
+==== BEGIN Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_1.m ====
+clear all; close all; clc;
+
+%% 1) pretvormo prvo v sivinsko
+img = imread('hotel.jpg');
+gray = rgb2gray(img);
+
+%% 2) Sobelova operatorja Sx in Sy
+Sx = [ 1 0 -1;
+       2 0 -2;
+       1 0 -1 ];
+
+Sy = [ 1  2  1;
+       0  0  0;
+      -1 -2 -1 ];
+
+%% 3) Konvoluciji gx gy slike s filtrom
+Gx = imfilter(double(gray), Sx, 'replicate');
+Gy = imfilter(double(gray), Sy, 'replicate');
+
+%% 4) Magnituda gradienta
+G = sqrt(Gx.^2 + Gy.^2);
+
+% normalizacija 
+Gnorm = uint8(255 * mat2gray(G));
+
+
+
+% Če je na sliki preveč robov → prag gor
+% Če jih je premau → prag dol
+threshold = 50;
+
+edges_sobel = G > threshold;
+
+%% 6) Cannyjev detektor robov
+edges_canny = edge(gray, 'Canny');
+
+%% 7) Prikaz rezultatov
+figure;
+subplot(1,3,1); imshow(gray); title('Sivinska slika');
+subplot(1,3,2); imshow(edges_sobel); title(['Sobel (threshold = ', num2str(threshold), ')']);
+subplot(1,3,3); imshow(edges_canny); title('Canny');
+==== END Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_1.m ====
+
+==== BEGIN Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_2.m ====
+%% labvaja4_2_withDraw.m
+% funkcija drawLines na koncu
+
+clear all; close all; clc;
+
+%% tle se nalozi slika in robovi iz naloge 1
+img = imread('hotel.jpg');
+gray = rgb2gray(img);
+
+edges_sobel = edge(gray, 'Sobel');
+edges_canny = edge(gray, 'Canny');
+
+% izberi eno
+edges = edges_canny;
+
+%% Priprava parametrov k in n
+k_min = -2;   k_max = 2;
+n_min = -200; n_max = 200;
+num_k = 401;  num_n = 401;
+k_values = linspace(k_min, k_max, num_k);
+n_values = linspace(n_min, n_max, num_n);
+A = zeros(num_k, num_n);   % akumulator
+
+%% Hough glasovanje
+[H, W] = size(edges);
+for y = 1:H
+    for x = 1:W
+        if edges(y,x)
+            for ki = 1:num_k
+                k = k_values(ki);
+                n = y - k*x;
+                if n >= n_min && n <= n_max
+                    nj = round((n - n_min) / (n_max - n_min) * (num_n - 1)) + 1;
+                    A(ki, nj) = A(ki, nj) + 1;
+                end
+            end
+        end
+    end
+end
+
+%% Najdi N največjih premic
+N = 5;
+A_flat = A(:);
+[~, idx] = maxk(A_flat, N);
+[k_idx, n_idx] = ind2sub(size(A), idx);
+k_list = k_values(k_idx);
+n_list = n_values(n_idx);
+
+%% Pokliči lokalno funkcijo, ki je definirana spodaj
+drawLines(img, k_list, n_list);
+
+% ------------------------------
+% Funkcija drawLines (lokalna)
+% ------------------------------
+function drawLines(imageRGB, k_list, n_list)
+    [H, W, ~] = size(imageRGB);
+    figure; imshow(imageRGB); hold on;
+    x_vals = 1:W;
+    colors = lines(max(1,length(k_list))); % lep nabor barv
+    for i = 1:length(k_list)
+        k = k_list(i);
+        n = n_list(i);
+        y_vals = k * x_vals + n;
+        valid = y_vals >= 1 & y_vals <= H;
+        plot(x_vals(valid), y_vals(valid), 'LineWidth', 2, 'Color', colors(mod(i-1,size(colors,1))+1,:));
+        % napiši labelo ob sredini premice
+        midx = round(W/2);
+        midy = k*midx + n;
+        if midy >= 1 && midy <= H
+            text(midx, midy, sprintf('%d', i), 'Color', 'y', 'FontSize', 12, 'FontWeight', 'bold');
+        end
+    end
+    title(['Najdenih premic: ', num2str(length(k_list))]);
+    hold off;
+end
+==== END Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_2.m ====
+
+==== BEGIN Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_3.m ====
+% Naloga 3
+
+clear all; close all; clc;
+
+video = VideoReader('squash.avi');
+
+% vzem vsak 10. frame
+step = 10;
+
+frames = {};   % za shranjevanje posameznih frameov
+count = 1;
+
+%% 2) Preberemo izbrane frame iz videja
+while hasFrame(video)
+    frame = readFrame(video);
+
+    if mod(count, step) == 0
+        frames{end+1} = frame;   % shran sliko
+    end
+
+    count = count + 1;
+end
+
+numFrames = length(frames);
+disp(['Uporabljenih frameov: ', num2str(numFrames)]);
+
+%% 3) Zloži frame v 4D matriko: H × W × 3 × N
+H = size(frames{1},1);
+W = size(frames{1},2);
+
+stack = zeros(H, W, 3, numFrames, 'uint8');
+
+for i = 1:numFrames
+    stack(:,:,:,i) = frames{i};
+end
+
+%% 4)  MEDIANA
+background = median(stack, 4);   % median po 4. dimenziji
+
+background = uint8(background);
+
+%% 5) Prikaž rezultat
+figure;
+imshow(background);
+title('Izračunano ozadje squash igrišča');
+
+save('background.mat','background');
+==== END Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_3.m ====
+
+==== BEGIN Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_4.m ====
+% Naloga 4
+
+clear all; close all; clc;
+
+
+video = VideoReader('squash.avi');
+
+% background iz 3.
+load('background.mat');   % -> background spremenljivka
+
+background = uint8(background);
+
+% Video writer
+out = VideoWriter('squash_tracking.mp4','MPEG-4');
+out.FrameRate = video.FrameRate;
+open(out);
+
+%treš
+threshold = 40;
+minArea = 150;
+se = strel('disk',4);
+
+figure;  % ena figura za vse frame, zaradi hitrosti
+
+% Frame-by-frame obdelava
+while hasFrame(video)
+
+    frame = readFrame(video);
+
+    % Razlika med sliko in ozadjem
+    D = double(frame) - double(background);
+    diff = sqrt(sum(D.^2, 3));
+
+    % Threshold
+    bw = diff > threshold;
+
+    % Morfologija
+    bw = imopen(bw, se);
+    bw = imclose(bw, se);
+    bw = bwareaopen(bw, minArea);
+
+    % Komponente
+    CC = bwlabel(bw);
+    stats = regionprops(CC, 'Area','BoundingBox','Centroid');
+
+    % Pripravi prikaz
+    imshow(frame);
+    hold on;
+
+    if ~isempty(stats)
+        % Izberi največja 2 objekta
+        [~, idx] = sort([stats.Area], 'descend');
+        idx = idx(1:min(2, length(idx)));
+
+        % Nariši
+        for k = 1:length(idx)
+            bb = stats(idx(k)).BoundingBox;
+            c  = stats(idx(k)).Centroid;
+
+            rectangle('Position', bb, 'EdgeColor', 'r', 'LineWidth', 2);
+            plot(c(1), c(2), 'yo', 'MarkerSize', 10, 'LineWidth', 2);
+        end
+    end
+
+    hold off;
+
+    % Zajemi frame iz figure
+    F = getframe(gcf);
+    writeVideo(out, F.cdata);
+
+end
+
+close(out);
+
+==== END Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_4.m ====
+
+==== BEGIN Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_5.m ====
+% Naloga 5
+
+clear all; close all; clc;
+
+% BRANJE VZORCEV
+
+% beli vzorec
+whiteSample = imread('belavzorec2.jpg');
+whiteHSV = rgb2hsv(im2double(whiteSample));
+whiteHist = imhist(whiteHSV(:,:,2)); % histogram saturacije
+whiteHist = whiteHist / sum(whiteHist);
+
+% rdeč vzorec
+% redSample = uint8(zeros(50,50,3));
+% redSample(:,:,1) = 180;  % R
+% redSample(:,:,2) = 20;   % G
+% redSample(:,:,3) = 20;   % B
+redSample = imread('rdecavzorec2.jpg');
+redHSV = rgb2hsv(im2double(redSample));
+redHist = imhist(redHSV(:,:,2));
+redHist = redHist / sum(redHist);
+
+% Video in ozadje
+video = VideoReader('squash.avi');
+load background.mat;
+background = uint8(background);
+
+out = VideoWriter('squash_colorID.mp4','MPEG-4');
+out.FrameRate = video.FrameRate;
+open(out);
+
+% Parametri segmentacije
+th = 25;
+minArea = 250;
+se = strel('disk',3);
+
+figure;
+
+
+% prevIsRed = [];  
+
+while hasFrame(video)
+
+    frame = readFrame(video);
+
+    
+    D = double(frame) - double(background);
+    diff = sqrt(sum(D.^2,3));
+    bw = diff > th;
+
+    bw = imopen(bw,se);
+    bw = imclose(bw,se);
+    bw = bwareaopen(bw,minArea);
+    bw = imfill(bw,'holes');
+
+    L = bwlabel(bw);
+    stats = regionprops(L,'Area','Centroid','BoundingBox');
+
+    imshow(frame); hold on;
+
+if ~isempty(stats)
+    [~,idx] = sort([stats.Area],'descend');
+    idx = idx(1:min(2, numel(idx)));
+
+    M = numel(idx);
+    redScoreList = zeros(1,M);
+    BBlist = zeros(M,4);
+    Clist = zeros(M,2);
+
+    % redscore
+    for i = 1:M
+        p = stats(idx(i));
+        BBlist(i,:) = p.BoundingBox;
+        Clist(i,:) = p.Centroid;
+
+        BB = p.BoundingBox;
+        x1 = max(1, floor(BB(1)));
+        y1 = max(1, floor(BB(2)));
+        x2 = min(size(frame,2), ceil(BB(1)+BB(3)-1));
+        y2 = min(size(frame,1), ceil(BB(2)+BB(4)-1));
+        sub = frame(y1:y2, x1:x2, :);
+
+        Hs = size(sub,1);
+        Ws = size(sub,2);
+        
+        % višina torza 
+        yA = round(Hs*0.15);
+        yB = round(Hs*0.40);
+        
+        % dinamična širina
+        aspect = Ws / Hs;
+        
+        if aspect < 0.55
+            xA = round(Ws*0.40);
+            xB = round(Ws*0.60);
+        else
+            xA = round(Ws*0.30);
+            xB = round(Ws*0.70);
+        end
+        
+        shirt = sub(yA:yB, xA:xB, :);
+
+
+        Hsv = rgb2hsv(im2double(shirt));
+        H = Hsv(:,:,1);
+        S = Hsv(:,:,2);
+
+        % maska
+        mask = S > 0.15;
+
+        if nnz(mask) < 50
+            redScoreList(i) = 0;
+        else
+            d = min(abs(H-0), abs(H-1));      % razdalja do rdece
+            redScoreList(i) = mean(d(mask) < 0.14);
+        end
+    end
+
+    % Dodeli identiteto: bolj rdec = A, drugi = B
+    if M == 2
+        [~, ridx] = max(redScoreList);
+        widx = 3 - ridx;
+
+        labels = strings(1,2);
+        cols = strings(1,2);
+        labels(ridx) = "A (rdeci)"; cols(ridx) = "red";
+        labels(widx) = "B (beli)";  cols(widx) = "white";
+    else
+        labels = "player";
+        cols = "yellow";
+    end
+
+    % Narisi
+    for i = 1:M
+        rectangle('Position', BBlist(i,:), 'EdgeColor','g','LineWidth',2);
+        plot(Clist(i,1), Clist(i,2), 'go','MarkerSize',8,'LineWidth',2);
+        text(Clist(i,1), Clist(i,2)-20, labels(i), 'Color', cols(i), ...
+             'FontSize',14,'FontWeight','bold');
+    end
+end
+
+
+    F = getframe(gcf);
+    writeVideo(out, F.cdata);
+    hold off;
+
+end
+
+close(out);
+==== END Adnan Halilović & Alja Belinger | Adnan Halilović_22786_assignsubmission_file + Alja Belinger_22776_assignsubmission_file | labvaja4_5.m ====
+
+
+==== BEGIN Aleksander Rijavec | Aleksander Rijavec_22787_assignsubmission_file | Vaja4.m ====
+%% naloga 1
+slika = imread('hotel.jpg');       
+sivinska = rgb2gray(slika);     
+%imshow(sivinska);
+
+% Sobelov operator
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];     % Horizontalni filter
+Sy = [1 2 1; 0 0 0; -1 -2 -1];     % Vertikalni filter
+
+% Konvolucija 
+Gx = conv2(double(sivinska), Sx); % Horizontalni gradient
+Gy = conv2(double(sivinska), Sy); % Vertikalni gradient
+
+% Magnituda gradientov
+G = sqrt(Gx .^ 2 + Gy .^ 2);         
+
+% Upragovljenje 
+threshold = 200;                   
+G_sobel = G > threshold;
+
+% Cannyjev detektor
+G_canny = edge(sivinska, 'Canny'); 
+
+% Prikaz rezultatov
+figure;
+subplot(1, 3, 1);
+imshow(sivinska);
+title('Originalna sivinska slika');
+
+subplot(1, 3, 2);
+imshow(G_sobel);
+title('Sobelov operator ');
+
+subplot(1, 3, 3);
+imshow(G_canny);
+title('Cannyjev detektor');
+
+%% naloga 2
+% Sobel
+N = 3;  % Število premic
+st_delov = 401; 
+
+k = linspace(-2, 2, st_delov); 
+n = linspace(-200, 200, st_delov);  
+
+% Inicializacija akumulatorja
+akumulator_sobel = zeros(size(k,2), size(n,2));
+
+% Glasovanje v Houghovem prostoru za Sobel
+for i = 10:size(G_sobel, 1)-10
+    for j = 10:size(G_sobel, 2)-10
+        if G_sobel(i, j) == 1 %piksel je del roba
+            for l = 1:401
+                for m = 1:401
+                    % y = k * j + n 
+                    y_pred = round(k(l) * j + n(m));
+                    if y_pred == i
+                        akumulator_sobel(l, m) = akumulator_sobel(l, m) + 1;
+                    end
+                end
+            end
+        end
+    end
+end
+
+figure;
+imshow(akumulator_sobel / max(max(akumulator_sobel))); %največja vrednost v matriki
+title('Houghov prostor (Sobel)');
+
+% Izris premic 
+drawLines(slika, akumulator_sobel, N, 'Sobel');
+
+%% Canny
+akumulator_canny = zeros(size(k,2), size(n,2));
+N=5;
+k = linspace(-2, 2, 401);
+n = linspace(-200, 200, 401);
+
+for i = 10:size(G_canny, 1)-10
+    for j = 10:size(G_canny, 2)-10
+        if G_canny(i, j) == 1
+            for l = 1:401
+                for m = 1:401
+                    % Izračunaj vrednost y = k * j(x) + n za vsako točko
+                    y_pred = round(k(l) * j + n(m));
+                    if y_pred == i
+                        akumulator_canny(l, m) = akumulator_canny(l, m) + 1;
+                    end
+                end
+            end
+        end
+    end
+end
+
+figure;
+imshow(akumulator_canny / max(max(akumulator_canny))); %največja vrednost v matriki
+title('Houghov prostor (Canny)');
+
+% Izris premic na izvirno sliko
+drawLines(slika, akumulator_canny, N, 'Canny');
+
+%% naloga 3 
+video = VideoReader('C:\Users\alexr\OneDrive\Desktop\squash.avi');
+
+% Parametri za izbiro slik
+n = 10; % vsaka 10 slika
+frames = 80; % skupno število slik 
+
+% dimenzije
+vidHeight = video.Height;
+vidWidth = video.Width;
+
+% 4D matika
+frame_stack = zeros(vidHeight, vidWidth, 3, frames, 'uint8');
+
+frame_idx = 1;
+for i = 1:n:frames*n
+    video.CurrentTime = (i-1) / video.FrameRate; %dobis s, kdaj se slika nahaja v videu
+    frame = readFrame(video);
+    frame_stack(:,:,:,frame_idx) = frame;
+    frame_idx = frame_idx + 1;
+end
+
+% Izračun mediane po dimenziji-4.
+ozadje = median(frame_stack, 4);
+
+ozadje = uint8(ozadje);
+figure;
+imshow(ozadje);
+title('Izračunano ozadje z median filtrom');
+imwrite(ozadje, 'ozadje.png');
+
+%% naloga 4
+video = VideoReader('C:\Users\alexr\OneDrive\Desktop\squash.avi');
+ozadje = imread('ozadje.png');
+
+% Parametri
+threshold = 60; 
+outputVideo = VideoWriter('igralci.avi');
+open(outputVideo);
+
+while hasFrame(video)
+    frame = readFrame(video);
+    
+    % Izračun evklidske razdalje med sliko in ozadjem
+    diff = sqrt(sum((double(frame) - double(ozadje)).^2, 3));
+    % Prikaz slike razlike (samo enkrat – za prvi okvir)
+    if video.CurrentTime == 1 / video.FrameRate
+        figure;
+        imagesc(diff);
+        colorbar;
+        colormap gray;
+        title('Slika razlike (evklidska razdalja RGB)');
+    end
+
+    % Binarizacija s pragom
+    binaryImage = diff > threshold;
+    
+    % morfološke operacije
+    binaryImage = bwmorph(binaryImage, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryImage = bwmorph(binaryImage, 'clean'); % odstrani 'izoliran piksel'
+    binaryImage = bwmorph(binaryImage, 'majority'); % piksli se nastavijo glede na večino sosednjih vrednosti.
+    
+    % Iskanje povezanih komponent
+    labeledImage = bwlabel(binaryImage);
+    stats = regionprops(labeledImage, 'Centroid', 'Area'); %geometrijske lastnosti povezanih komponent
+    
+    % Preverimo, če imamo vsaj dve komponenti
+    if numel(stats) >= 2
+        % Iskanje dveh največjih področij (igralcev)
+        [~, idx] = maxk([stats.Area], 2); % % dve največji področji
+        centroid1 = stats(idx(1)).Centroid;
+        centroid2 = stats(idx(2)).Centroid;
+        
+        circles = [centroid1, 20; centroid2, 20]; % Središče in radij kroga
+        
+        % Dodaj sliko v izhodni video z označenimi krogi
+        frameWithCircles = insertShape(frame, 'Circle', circles, ...
+                                       'Color', 'red', 'LineWidth', 3);
+    else
+        % Če ni dovolj komponent, samo prikažemo trenutni okvir brez sprememb
+        frameWithCircles = frame;
+    end
+    
+    % Zapis v izhodni video
+    writeVideo(outputVideo, frameWithCircles);
+end
+
+close(outputVideo);
+
+%% naloga 5
+video = VideoReader('C:\Users\alexr\OneDrive\Desktop\squash.avi');
+ozadje = imread('ozadje.png'); 
+
+threshold = 40; 
+outputVideo = VideoWriter('igralci_barva.avi'); 
+open(outputVideo);
+
+frame = readFrame(video);
+imshow(frame);
+title('Kliknite na dve točki za barvo majic');
+[x, y] = ginput(2); % dve točki na sliki
+
+% RGB vrednosti 
+selectedColorA = reshape(frame(round(y(1)), round(x(1)), :), 1, 3); 
+selectedColorB = reshape(frame(round(y(2)), round(x(2)), :), 1, 3);
+
+disp('Barve za igralca A (rdeči):');
+disp(['R: ', num2str(selectedColorA(1)), ', G: ', num2str(selectedColorA(2)), ', B: ', num2str(selectedColorA(3))]);
+
+disp('Barve za igralca B (beli):');
+disp(['R: ', num2str(selectedColorB(1)), ', G: ', num2str(selectedColorB(2)), ', B: ', num2str(selectedColorB(3))]);
+
+while hasFrame(video)
+    frame = readFrame(video);
+    
+    % Izračun evklidske razdalje med sliko in ozadjem
+    diff = sqrt(sum((double(frame) - double(ozadje)).^2, 3));
+    binaryImage = diff > threshold;
+    
+    % Morfološke operacije 
+    binaryImage = bwmorph(binaryImage, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryImage = bwmorph(binaryImage, 'clean'); % odstrani 'izoliran piksel'
+    binaryImage = bwmorph(binaryImage, 'majority'); % Piksli se nastavijo glede na večino sosednjih vrednosti.
+    
+    % Igralec A
+    R = frame(:,:,1);
+    G = frame(:,:,2);
+    B = frame(:,:,3);
+    
+    tolerance = 35; % Toleranca za barve
+    binaryA = (R >= (selectedColorA(1) - tolerance) & R <= (selectedColorA(1) + tolerance)) & ...
+              (G >= (selectedColorA(2) - tolerance) & G <= (selectedColorA(2) + tolerance)) & ...
+              (B >= (selectedColorA(3) - tolerance) & B <= (selectedColorA(3) + tolerance));
+    binaryA = uint8(binaryA) * 255;
+    
+    % Igralec B
+    binaryB = (R >= (selectedColorB(1) - tolerance) & R <= (selectedColorB(1) + tolerance)) & ...
+              (G >= (selectedColorB(2) - tolerance) & G <= (selectedColorB(2) + tolerance)) & ...
+              (B >= (selectedColorB(3) - tolerance) & B <= (selectedColorB(3) + tolerance));
+    binaryB = uint8(binaryB) * 255;
+    binaryA = binaryA & binaryImage;
+    binaryB = binaryB & binaryImage;
+    % Morfološke operacije 
+    binaryA = bwmorph(binaryA, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryB = bwmorph(binaryB, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+
+    % Iskanje povezanih komponent za igralca A in B
+    labeledA = bwlabel(binaryA);
+    labeledB = bwlabel(binaryB);
+    
+    %geometrijske lastnosti povezanih komponent
+    statsA = regionprops(labeledA, 'Centroid', 'Area');
+    statsB = regionprops(labeledB, 'Centroid', 'Area');
+    
+    if ~isempty(statsA) && ~isempty(statsB) %da nista prazna
+        % Iskanje dveh največjih področij 
+        [~, idxA] = max([statsA.Area]);
+        [~, idxB] = max([statsB.Area]);
+        
+        centroidA = statsA(idxA).Centroid;
+        centroidB = statsB(idxB).Centroid;
+        
+        % oznaciigralca
+        frameWithCircles = insertShape(frame, 'Circle', [centroidA, 30], ...
+                                       'Color', 'red', 'LineWidth', 3);
+        frameWithCircles = insertShape(frameWithCircles, 'Circle', [centroidB, 30], ...
+                                       'Color', 'white', 'LineWidth', 3);
+        
+        frameWithCircles = insertText(frameWithCircles, centroidA, 'A', 'FontSize', 18, 'TextColor', 'red');
+        frameWithCircles = insertText(frameWithCircles, centroidB, 'B', 'FontSize', 18, 'TextColor', 'white');
+    else
+        % Če ni dovolj komponent, samo prikažemo trenutni okvir brez sprememb
+        frameWithCircles = frame;
+    end
+    
+    writeVideo(outputVideo, frameWithCircles);
+end
+
+close(outputVideo);
+==== END Aleksander Rijavec | Aleksander Rijavec_22787_assignsubmission_file | Vaja4.m ====
+
+
+==== BEGIN Amar Šaranović | Amar Šaranović_22791_assignsubmission_file | drawLines.m ====
+% Function: drawLines
+% Author: Marija Ivanovska
+% Description: This function draws N lines with maximum number of votes,
+% defined by Hough transformation.
+% Usage example:
+% hotelRGB=imread('hotel.jpg'); % input image
+% N = 5; % number of lines we want to draw
+% HoughSpace = HoughTransform(BinaryImage)
+% drawLines(hotelRGB,HoughSpace,N,'Sobel');
+function []=drawLines(image,HoughSpace,N,Operator)
+k=-2:0.01:2;
+n=-200:1:200;
+maximum=zeros(N,2);
+for p=1:N % (k,n)
+[max1,index]=max(HoughSpace);
+[max2,columnId]=max(max1);
+rowId=index(columnId);
+maximum(p,1)=k(rowId);
+maximum(p,2)=n(columnId);
+HoughSpace(rowId,columnId)=0;
+for i=1:481
+    j=round(k(rowId)*i+n(columnId));
+    for widthVar=1:size(j)
+        image(j,i,1)=255;
+        image(j,i,2)=0;
+        image(j,i,3)=0;
+    end
+end
+end
+figure('Name',Operator);imshow(image);
+==== END Amar Šaranović | Amar Šaranović_22791_assignsubmission_file | drawLines.m ====
+
+==== BEGIN Amar Šaranović | Amar Šaranović_22791_assignsubmission_file | Vaja4.m ====
+%% naloga 1
+slika = imread('hotel.jpg');       
+sivinska = rgb2gray(slika);     
+%imshow(sivinska);
+
+% Sobelov operator
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];     % Horizontalni filter
+Sy = [1 2 1; 0 0 0; -1 -2 -1];     % Vertikalni filter
+
+% Konvolucija 
+Gx = conv2(double(sivinska), Sx); % Horizontalni gradient
+Gy = conv2(double(sivinska), Sy); % Vertikalni gradient
+
+% Magnituda gradientov
+G = sqrt(Gx .^ 2 + Gy .^ 2);         
+
+% Upragovljenje 
+threshold = 200;                   
+G_sobel = G > threshold;
+
+% Cannyjev detektor
+G_canny = edge(sivinska, 'Canny'); 
+
+% Prikaz rezultatov
+figure;
+subplot(1, 3, 1);
+imshow(sivinska);
+title('Originalna sivinska slika');
+
+subplot(1, 3, 2);
+imshow(G_sobel);
+title('Sobelov operator ');
+
+subplot(1, 3, 3);
+imshow(G_canny);
+title('Cannyjev detektor');
+
+%% naloga 2
+% Sobel
+N = 3;  % Število premic
+st_delov = 401; 
+
+k = linspace(-2, 2, st_delov); 
+n = linspace(-200, 200, st_delov);  
+
+% Inicializacija akumulatorja
+akumulator_sobel = zeros(size(k,2), size(n,2));
+
+% Glasovanje v Houghovem prostoru za Sobel
+for i = 10:size(G_sobel, 1)-10
+    for j = 10:size(G_sobel, 2)-10
+        if G_sobel(i, j) == 1 %piksel je del roba
+            for l = 1:401
+                for m = 1:401
+                    % y = k * j + n 
+                    y_pred = round(k(l) * j + n(m));
+                    if y_pred == i
+                        akumulator_sobel(l, m) = akumulator_sobel(l, m) + 1;
+                    end
+                end
+            end
+        end
+    end
+end
+
+figure;
+imshow(akumulator_sobel / max(max(akumulator_sobel))); %največja vrednost v matriki
+title('Houghov prostor (Sobel)');
+
+% Izris premic 
+drawLines(slika, akumulator_sobel, N, 'Sobel');
+
+%% Canny
+akumulator_canny = zeros(size(k,2), size(n,2));
+N=5;
+k = linspace(-2, 2, 401);
+n = linspace(-200, 200, 401);
+
+for i = 10:size(G_canny, 1)-10
+    for j = 10:size(G_canny, 2)-10
+        if G_canny(i, j) == 1
+            for l = 1:401
+                for m = 1:401
+                    % Izračunaj vrednost y = k * j(x) + n za vsako točko
+                    y_pred = round(k(l) * j + n(m));
+                    if y_pred == i
+                        akumulator_canny(l, m) = akumulator_canny(l, m) + 1;
+                    end
+                end
+            end
+        end
+    end
+end
+
+figure;
+imshow(akumulator_canny / max(max(akumulator_canny))); %največja vrednost v matriki
+title('Houghov prostor (Canny)');
+
+% Izris premic na izvirno sliko
+drawLines(slika, akumulator_canny, N, 'Canny');
+
+%% naloga 3 
+video = VideoReader('squash.avi');
+
+% Parametri za izbiro slik
+n = 10; % vsaka 10 slika
+frames = 80; % skupno število slik 
+
+% dimenzije
+vidHeight = video.Height;
+vidWidth = video.Width;
+
+% 4D matika
+frame_stack = zeros(vidHeight, vidWidth, 3, frames, 'uint8');
+
+frame_idx = 1;
+for i = 1:n:frames*n
+    video.CurrentTime = (i-1) / video.FrameRate; %dobis s, kdaj se slika nahaja v videu
+    frame = readFrame(video);
+    frame_stack(:,:,:,frame_idx) = frame;
+    frame_idx = frame_idx + 1;
+end
+
+% Izračun mediane po dimenziji-4.
+ozadje = median(frame_stack, 4);
+
+ozadje = uint8(ozadje);
+figure;
+imshow(ozadje);
+title('Izračunano ozadje z median filtrom');
+imwrite(ozadje, 'ozadje.png');
+
+%% naloga 4
+video = VideoReader('squash.avi');
+ozadje = imread('ozadje.png');
+
+% Parametri
+threshold = 60; 
+outputVideo = VideoWriter('igralci.avi');
+open(outputVideo);
+
+while hasFrame(video)
+    frame = readFrame(video);
+    
+    % Izračun evklidske razdalje med sliko in ozadjem
+    diff = sqrt(sum((double(frame) - double(ozadje)).^2, 3));
+    % Prikaz slike razlike (samo enkrat – za prvi okvir)
+    if video.CurrentTime == 1 / video.FrameRate
+        figure;
+        imagesc(diff);
+        colorbar;
+        colormap gray;
+        title('Slika razlike (evklidska razdalja RGB)');
+    end
+
+    % Binarizacija s pragom
+    binaryImage = diff > threshold;
+    
+    % morfološke operacije
+    binaryImage = bwmorph(binaryImage, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryImage = bwmorph(binaryImage, 'clean'); % odstrani 'izoliran piksel'
+    binaryImage = bwmorph(binaryImage, 'majority'); % piksli se nastavijo glede na večino sosednjih vrednosti.
+    
+    % Iskanje povezanih komponent
+    labeledImage = bwlabel(binaryImage);
+    stats = regionprops(labeledImage, 'Centroid', 'Area'); %geometrijske lastnosti povezanih komponent
+    
+    % Preverimo, če imamo vsaj dve komponenti
+    if numel(stats) >= 2
+        % Iskanje dveh največjih področij (igralcev)
+        [~, idx] = maxk([stats.Area], 2); % % dve največji področji
+        centroid1 = stats(idx(1)).Centroid;
+        centroid2 = stats(idx(2)).Centroid;
+        
+        circles = [centroid1, 20; centroid2, 20]; % Središče in radij kroga
+        
+        % Dodaj sliko v izhodni video z označenimi krogi
+        frameWithCircles = insertShape(frame, 'Circle', circles, ...
+                                       'Color', 'red', 'LineWidth', 3);
+    else
+        % Če ni dovolj komponent, samo prikažemo trenutni okvir brez sprememb
+        frameWithCircles = frame;
+    end
+    
+    % Zapis v izhodni video
+    writeVideo(outputVideo, frameWithCircles);
+end
+
+close(outputVideo);
+
+%% naloga 5
+video = VideoReader('squash.avi');
+ozadje = imread('ozadje.png'); 
+
+threshold = 40; 
+outputVideo = VideoWriter('igralci_barva.avi'); 
+open(outputVideo);
+
+frame = readFrame(video);
+imshow(frame);
+title('Kliknite na dve točki za barvo majic');
+[x, y] = ginput(2); % dve točki na sliki
+
+% RGB vrednosti 
+selectedColorA = reshape(frame(round(y(1)), round(x(1)), :), 1, 3); 
+selectedColorB = reshape(frame(round(y(2)), round(x(2)), :), 1, 3);
+
+disp('Barve za igralca A (rdeči):');
+disp(['R: ', num2str(selectedColorA(1)), ', G: ', num2str(selectedColorA(2)), ', B: ', num2str(selectedColorA(3))]);
+
+disp('Barve za igralca B (beli):');
+disp(['R: ', num2str(selectedColorB(1)), ', G: ', num2str(selectedColorB(2)), ', B: ', num2str(selectedColorB(3))]);
+
+while hasFrame(video)
+    frame = readFrame(video);
+    
+    % Izračun evklidske razdalje med sliko in ozadjem
+    diff = sqrt(sum((double(frame) - double(ozadje)).^2, 3));
+    binaryImage = diff > threshold;
+    
+    % Morfološke operacije 
+    binaryImage = bwmorph(binaryImage, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryImage = bwmorph(binaryImage, 'clean'); % odstrani 'izoliran piksel'
+    binaryImage = bwmorph(binaryImage, 'majority'); % Piksli se nastavijo glede na večino sosednjih vrednosti.
+    
+    % Igralec A
+    R = frame(:,:,1);
+    G = frame(:,:,2);
+    B = frame(:,:,3);
+    
+    tolerance = 35; % Toleranca za barve
+    binaryA = (R >= (selectedColorA(1) - tolerance) & R <= (selectedColorA(1) + tolerance)) & ...
+              (G >= (selectedColorA(2) - tolerance) & G <= (selectedColorA(2) + tolerance)) & ...
+              (B >= (selectedColorA(3) - tolerance) & B <= (selectedColorA(3) + tolerance));
+    binaryA = uint8(binaryA) * 255;
+    
+    % Igralec B
+    binaryB = (R >= (selectedColorB(1) - tolerance) & R <= (selectedColorB(1) + tolerance)) & ...
+              (G >= (selectedColorB(2) - tolerance) & G <= (selectedColorB(2) + tolerance)) & ...
+              (B >= (selectedColorB(3) - tolerance) & B <= (selectedColorB(3) + tolerance));
+    binaryB = uint8(binaryB) * 255;
+    binaryA = binaryA & binaryImage;
+    binaryB = binaryB & binaryImage;
+    % Morfološke operacije 
+    binaryA = bwmorph(binaryA, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryB = bwmorph(binaryB, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+
+    % Iskanje povezanih komponent za igralca A in B
+    labeledA = bwlabel(binaryA);
+    labeledB = bwlabel(binaryB);
+    
+    %geometrijske lastnosti povezanih komponent
+    statsA = regionprops(labeledA, 'Centroid', 'Area');
+    statsB = regionprops(labeledB, 'Centroid', 'Area');
+    
+    if ~isempty(statsA) && ~isempty(statsB) %da nista prazna
+        % Iskanje dveh največjih področij 
+        [~, idxA] = max([statsA.Area]);
+        [~, idxB] = max([statsB.Area]);
+        
+        centroidA = statsA(idxA).Centroid;
+        centroidB = statsB(idxB).Centroid;
+        
+        % oznaciigralca
+        frameWithCircles = insertShape(frame, 'Circle', [centroidA, 30], ...
+                                       'Color', 'red', 'LineWidth', 3);
+        frameWithCircles = insertShape(frameWithCircles, 'Circle', [centroidB, 30], ...
+                                       'Color', 'white', 'LineWidth', 3);
+        
+        frameWithCircles = insertText(frameWithCircles, centroidA, 'A', 'FontSize', 18, 'TextColor', 'red');
+        frameWithCircles = insertText(frameWithCircles, centroidB, 'B', 'FontSize', 18, 'TextColor', 'white');
+    else
+        % Če ni dovolj komponent, samo prikažemo trenutni okvir brez sprememb
+        frameWithCircles = frame;
+    end
+    
+    writeVideo(outputVideo, frameWithCircles);
+end
+
+close(outputVideo);
+==== END Amar Šaranović | Amar Šaranović_22791_assignsubmission_file | Vaja4.m ====
+
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga1.m ====
+clc;
+clear;
+close all;
+
+img = imread('hotel.jpg');
+
+if size(img,3) == 3
+    img_gray = rgb2gray(img);
+else
+    img_gray = img;
+end
+
+img_gray = double(img_gray);
+
+Sx = [ 1  0 -1;
+       2  0 -2;
+       1  0 -1 ];
+
+Sy = [ 1  2  1;
+       0  0  0;
+      -1 -2 -1 ];
+
+Gx = imfilter(img_gray, Sx, 'replicate');
+Gy = imfilter(img_gray, Sy, 'replicate');
+
+G = sqrt(Gx.^2 + Gy.^2);
+G = G / max(G(:));
+
+threshold = 0.25;
+edges_sobel = G > threshold;
+
+edges_canny = edge(uint8(img_gray), 'canny');
+
+save('edges_hotel.mat', 'edges_sobel', 'edges_canny', 'img');
+
+imwrite(edges_sobel, 'edges_sobel.png');
+imwrite(edges_canny, 'edges_canny.png');
+
+figure;
+
+subplot(2,2,1);
+imshow(uint8(img_gray));
+
+subplot(2,2,2);
+imshow(G, []);
+
+subplot(2,2,3);
+imshow(edges_sobel);
+
+subplot(2,2,4);
+imshow(edges_canny);
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga1.m ====
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga2.m ====
+clc;
+clear;
+close all;
+
+load('edges_hotel.mat');
+
+k_min = -2;
+k_max =  2;
+n_min = -200;
+n_max =  200;
+
+num_bins = 400;
+
+k_vals = linspace(k_min, k_max, num_bins+1);
+n_vals = linspace(n_min, n_max, num_bins+1);
+
+edges_all = {edges_sobel, edges_canny};
+titles = {'Hough – Sobel robovi', 'Hough – Canny robovi'};
+
+N = 5;
+
+for t = 1:2
+
+    edges = logical(edges_all{t});
+    [rows, cols] = size(edges);
+
+    accumulator = zeros(length(k_vals), length(n_vals));
+
+    for y = 1:rows
+        for x = 1:cols
+            if edges(y,x)
+                for ki = 1:length(k_vals)
+                    k = k_vals(ki);
+                    n = y - k * x;
+
+                    if n >= n_min && n <= n_max
+                        ni = round((n - n_min) / (n_max - n_min) * num_bins) + 1;
+                        accumulator(ki, ni) = accumulator(ki, ni) + 1;
+                    end
+                end
+            end
+        end
+    end
+
+    acc = accumulator;
+    lines = zeros(N,2);
+
+    for i = 1:N
+        [~, idx] = max(acc(:));
+        [ki, ni] = ind2sub(size(acc), idx);
+
+        lines(i,1) = k_vals(ki);
+        lines(i,2) = n_vals(ni);
+
+        acc(ki, ni) = 0;
+    end
+
+    figure;
+    imshow(img);
+    hold on;
+
+    x_vals = 1:cols;
+
+    for i = 1:N
+        k = lines(i,1);
+        n = lines(i,2);
+        y_vals = k * x_vals + n;
+        plot(x_vals, y_vals, 'r', 'LineWidth', 2);
+    end
+
+    title(titles{t});
+    hold off;
+end
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga2.m ====
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga3.m ====
+clc;
+clear;
+close all;
+
+% Branje videa
+videoFile = 'squash.avi';
+vidObj = VideoReader(videoFile);
+
+% Parametri
+frameStep = 10;  % vsaka 10. slika
+framesToUse = floor(vidObj.NumFrames / frameStep);
+
+% Preberi izbrane slike in jih shrani v 4D matriko
+sampleFrames = zeros(vidObj.Height, vidObj.Width, 3, framesToUse, 'uint8');
+
+count = 1;
+for i = 1:frameStep:vidObj.NumFrames
+    frame = read(vidObj, i);
+    sampleFrames(:,:,:,count) = frame;
+    count = count + 1;
+end
+
+
+% Median je najbolj primerna statistična funkcija za ozadje
+bgImage = median(sampleFrames, 4);   % median po 4. dimenziji (frame)
+bgImage = uint8(bgImage);            % pretvorba v 8-bit
+
+figure;
+imshow(bgImage);
+title('Izračunano ozadje posnetka (median)');
+
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga3.m ====
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga4.m ====
+clc;
+clear;
+close all;
+
+videoFile = 'squash.avi';
+vidObj = VideoReader(videoFile);
+
+frameStep = 10;
+framesToUse = floor(vidObj.NumFrames / frameStep);
+
+%4D matrica
+sampleFrames = zeros(vidObj.Height, vidObj.Width, 3, framesToUse, 'uint8');
+count = 1;
+
+for i = 1:frameStep:vidObj.NumFrames
+    frame = read(vidObj, i); %i-ti frame iz videa
+    sampleFrames(:,:,:,count) = frame;
+    count = count + 1;
+end
+
+bgImage = median(sampleFrames, 4);
+bgImage = uint8(bgImage);
+
+vidObj.CurrentTime = 0;
+testFrame = readFrame(vidObj);
+
+diffTest = sqrt(sum((double(testFrame) - double(bgImage)).^2, 3)); %Euklidska udaljenost
+
+figure;
+imagesc(diffTest);
+colormap gray;
+colorbar;
+title('Slika razlike (evklidska RGB razdalja)');
+
+outputFile = 'squash_tracked.avi';
+vidWriter = VideoWriter(outputFile);
+open(vidWriter);
+
+thresholdDiff = 50; %sve iznad ovoga se smatra pokretnim objektom
+markerSize = 5;
+
+vidObj.CurrentTime = 0;
+
+while hasFrame(vidObj)
+    frame = readFrame(vidObj);
+
+    diffImage = sqrt(sum((double(frame) - double(bgImage)).^2, 3));
+
+    bw = diffImage > thresholdDiff;
+
+    bw = bwmorph(bw,'close');
+    bw = bwmorph(bw,'open');
+
+    [labeled, num] = bwlabel(bw);
+    stats = regionprops(labeled,'Centroid','Area');
+
+    if num > 0  %sortiranje komp po povrsini (najvece prvo)
+        areas = [stats.Area];
+        [~, idx] = sort(areas, 'descend');
+        idx = idx(1:min(2,length(idx)));
+
+        for k = idx
+            cx = round(stats(k).Centroid(1)); %centroid odabrane komponente
+            cy = round(stats(k).Centroid(2));
+
+            xRange = max(cx-markerSize,1):min(cx+markerSize,size(frame,2)); %kvadratic oko centroida
+            yRange = max(cy-markerSize,1):min(cy+markerSize,size(frame,1));
+
+            frame(yRange,xRange,1) = 255; %bojanje kvadratica
+            frame(yRange,xRange,2) = 0;
+            frame(yRange,xRange,3) = 0;
+        end
+    end
+
+    writeVideo(vidWriter, frame);
+end
+
+close(vidWriter);
+
+disp(['Video saved as: ', outputFile]);
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga4.m ====
+
+==== BEGIN Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga5.m ====
+clc; clear; close all;
+
+%% Load video
+squash = VideoReader('squash.avi');
+H = squash.Height;
+W = squash.Width;
+numFrames = squash.NumFrames;
+
+%% Compute background using median of sampled frames
+frameStep = 10;
+sampleCount = floor(numFrames/frameStep);
+sampleFrames = zeros(H,W,3,sampleCount,'uint8');
+
+for f = 1:sampleCount
+    sampleFrames(:,:,:,f) = read(squash,f*frameStep);
+end
+
+frameNew = zeros(H,W,3,'uint8');
+for c = 1:3
+    frameNew(:,:,c) = mode(sampleFrames(:,:,c,:),4);
+end
+
+%% Prepare video writer
+vidWriter = VideoWriter('squash_tracked_colors.avi');
+vidWriter.FrameRate = squash.FrameRate;
+open(vidWriter);
+
+%% Process video frame by frame
+for k = 1:numFrames
+    frame = read(squash,k);
+    
+    % Euclidean distance from background
+    diffImage = sqrt(sum((double(frame)-double(frameNew)).^2,3));
+    
+    % Threshold & morphology
+    bw = diffImage > 50;
+    bw = bwmorph(bw,'close');
+    bw = bwmorph(bw,'open');
+    
+    % Label and select two largest blobs
+    [L,n] = bwlabel(bw);
+    stats = regionprops(L,'Area','Centroid','PixelIdxList');
+    areas = [stats.Area];
+    if length(areas) < 2
+        writeVideo(vidWriter, frame);
+        continue
+    end
+    [~,idxSort] = sort(areas,'descend');
+    players = stats(idxSort(1:2));
+    centroid = reshape([players.Centroid],2,[])';
+    
+    % Shirt color detection
+    red = 0; white = 0;
+    for i = round(centroid(1,2))-10 : round(centroid(1,2))+10
+        for j = round(centroid(1,1))-10 : round(centroid(1,1))+10
+            if i>0 && i<=H && j>0 && j<=W
+                if frame(i,j,1)>100 && frame(i,j,2)<130 && frame(i,j,3)<130
+                    red = red +1;
+                elseif frame(i,j,1)>100 && frame(i,j,2)>150 && frame(i,j,3)>150
+                    white = white +1;
+                end
+            end
+        end
+    end
+    
+    % Draw colored circles
+    RGB = frame;
+    if red > white
+        color1 = [255 0 0]; % Player 1 red
+        color2 = [0 0 255]; % Player 2 blue
+    else
+        color1 = [0 0 255]; % Player 1 blue
+        color2 = [255 0 0]; % Player 2 red
+    end
+    RGB = insertShape(RGB,'circle',[centroid(1,1) centroid(1,2) 20],'Color',color1,'LineWidth',3);
+    RGB = insertShape(RGB,'circle',[centroid(2,1) centroid(2,2) 20],'Color',color2,'LineWidth',3);
+    
+    writeVideo(vidWriter, RGB);
+end
+
+close(vidWriter);
+disp('Video saved: squash_tracked_colors.avi');
+==== END Azra Bulić & Dunja Mihajlović | Azra Bulić_22792_assignsubmission_file + Dunja Mihajlović_22784_assignsubmission_file | naloga5.m ====
+
+
+==== BEGIN Bine Sever | Bine Sever_22795_assignsubmission_file | drawLines.m ====
+% Function: drawLines
+% Author: Marija Ivanovska
+% Description: This function draws N lines with maximum number of votes,
+% defined by Hough transformation.
+% Usage example:
+% hotelRGB=imread('hotel.jpg'); % input image
+% N = 5; % number of lines we want to draw
+% HoughSpace = HoughTransform(BinaryImage)
+% drawLines(hotelRGB,HoughSpace,N,'Sobel');
+function []=drawLines(image,HoughSpace,N,Operator)
+k=-2:0.01:2;
+n=-200:1:200;
+maximum=zeros(N,2);
+for p=1:N % (k,n)
+[max1,index]=max(HoughSpace);
+[max2,columnId]=max(max1);
+rowId=index(columnId);
+maximum(p,1)=k(rowId);
+maximum(p,2)=n(columnId);
+HoughSpace(rowId,columnId)=0;
+for i=1:481
+    j=round(k(rowId)*i+n(columnId));
+    for widthVar=1:numel(j)
+        image(j,i,1)=255;
+        image(j,i,2)=0;
+        image(j,i,3)=0;
+    end
+end
+end
+figure('Name',Operator);imshow(image);
+==== END Bine Sever | Bine Sever_22795_assignsubmission_file | drawLines.m ====
+
+==== BEGIN Bine Sever | Bine Sever_22795_assignsubmission_file | Vaja4.m ====
+websave('hotel.jpg', 'https://vision.fe.uni-lj.si/classes/RV/vaje/vaja4/hotel.jpg');
+websave('squash.avi', 'http://vision.fe.uni-lj.si/classes/RV/vaje/vaja4/squash.avi');
+
+%%
+%Naloga 1
+Sx = [1 0 -1;
+     2 0 -2;
+     1 0 -1];
+
+Sy = [1 2 1;
+     0 0 0;
+     -1 -2 -1];
+
+hotelRGB = imread('hotel.jpg');
+hotelGray = rgb2gray(hotelRGB);
+figure
+imshow(hotelGray);
+
+Gx = conv2(hotelGray,Sx,"valid");
+Gy = conv2(hotelGray,Sy,"valid");
+G = sqrt(Gx.^2 + Gy.^2);
+t = 200;
+mask = G > t;
+soble_blackwhite = uint8(mask)*255;
+figure
+subplot(1,2,1)
+imshow(soble_blackwhite);
+title('Sobel')
+
+subplot(1,2,2)
+cannyHotel = edge(hotelGray,'canny');
+imshow(cannyHotel);
+title('Canny')
+
+%%
+%Naloga 2 Sobel
+k = -2:0.01:2;
+n = -200:1:200;
+
+sizeK = numel(k);
+sizeN = numel(n);
+
+akumulator_sobel = zeros(sizeK, sizeN);
+
+[rows, cols] = size(soble_blackwhite);
+
+for ik = 1:sizeK
+    for in = 1:sizeN
+        for x = 1:cols
+            for y = 1:rows
+                if soble_blackwhite(y,x) == 255
+                    y_premica = k(ik)*x + n(in);
+
+                    if y == round(y_premica)
+                        akumulator_sobel(ik, in) = akumulator_sobel(ik, in) + 1;
+                    end
+                end
+            end
+        end
+    end
+end
+
+
+akumluator_sobel_norm = akumulator_sobel/max(akumulator_sobel,[],'All');
+akumulator_sivinski_sobel = uint8(ceil(akumluator_sobel_norm*255));
+figure
+imshow(akumulator_sivinski_sobel)
+impixelinfo;
+%%
+hotelRGB=imread('hotel.jpg');
+N = 5; % number of lines we want to draw
+HoughSpace = akumulator_sobel;
+drawLines(hotelRGB,HoughSpace,N,'Sobel');
+
+%%
+%Naloga 2 Canny
+k = -2:0.01:2;
+n = -200:1:200;
+
+sizeK = numel(k);
+sizeN = numel(n);
+
+akumulator = zeros(sizeK, sizeN);
+
+[rows, cols] = size(cannyHotel);
+
+for ik = 1:sizeK
+    for in = 1:sizeN
+        for x = 1:cols
+            for y = 1:rows
+                if cannyHotel(y,x) == 1
+                    y_premica = k(ik)*x + n(in);
+                    if y == round(y_premica)
+                        akumulator(ik,in) = akumulator(ik,in) + 1; 
+                    end
+                end
+            end
+        end
+    end
+end
+
+%%
+akumluator_norm = akumulator/max(akumulator,[],'All');
+akumulator_sivinsko = uint8(ceil(akumluator_norm*255));
+figure
+imshow(akumulator_sivinsko)
+impixelinfo;
+title("Canny akumulator")
+%%
+hotelRGB=imread('hotel.jpg');
+N = 5; % number of lines we want to draw
+HoughSpace = akumulator;
+drawLines(hotelRGB,HoughSpace,N,'Canny');
+
+
+%%%%%%%%%%%%%%%%%%
+%% 3.naloga
+
+video = VideoReader('squash.avi');
+frame_idx = round(linspace(1,video.NumFrames,80));
+numberofframes = numel(frame_idx);
+[rows,cols,colour] = size(read(video,1));
+frames = zeros(rows,cols,colour,numberofframes);
+%frames = uint8(frames);
+
+for i = 1:numberofframes
+    frame = double(read(video,frame_idx(i)));
+    frames(:,:,:,i) = frame;
+end
+
+ozadje = mode(frames,4);
+ozadje = uint8(ozadje);
+
+
+imshow(ozadje)
+%%
+% Naloga 4
+video = VideoReader('squash.avi');
+x0 = 52.51;
+y0 = 39.51;
+width = 296.98;
+height = 208.98;
+ROI = [x0 y0 width height];
+Offset = [x0,y0];
+
+ozadje_crop = imcrop(ozadje,ROI);
+R_ozadje = ozadje_crop(:,:,1);
+G_ozadje = ozadje_crop(:,:,2);
+B_ozadje = ozadje_crop(:,:,3);
+
+
+out_dist = VideoWriter('Distance.avi');
+
+
+open(out_dist);
+for t = 1:video.NumFrames
+    frame = read(video,t);
+    frameCrop = imcrop(frame,ROI);
+    R = frameCrop(:,:,1);
+    G = frameCrop(:,:,2);
+    B = frameCrop(:,:,3);
+    
+    r = sqrt((double(R_ozadje-R)).^2 + (double(G_ozadje-G)).^2 + (double(B_ozadje-B)).^2);
+    T = 18;
+    mask = r > T;
+    mask = bwmorph(mask,'clean');
+    mask = bwmorph(mask,'open');
+    mask = bwmorph(mask,'close');
+    mask = bwmorph(mask,'open');
+    mask = bwmorph(mask,'close');
+    [L, num] = bwlabel(mask, 8);
+    Lvis = zeros(size(L),'uint8');
+    Lvis(L == 1) = 100;
+    Lvis(L == 2) = 255;
+    
+    
+    stats = regionprops(L, 'Centroid','Area','BoundingBox');% en vnos v stats na vsak label > 0
+    areas = [stats.Area];                          % 1×N double
+    [AreaSize, Stat_indx] = sort(areas, 'descend');
+    if  numel(Stat_indx) >= 2
+        igralca = [stats(Stat_indx(1)),stats(Stat_indx(2))];
+    else
+        igralca = [stats(Stat_indx(1))];
+    end
+
+   
+   
+    r = 25;                        % isti polmer za vse
+    imshow(frame)
+    hold on
+    for k = 1:numel(igralca)
+        c = igralca(k).Centroid + Offset(1:2);
+        if k ==1
+            viscircles(c, r, 'Color','r','LineWidth',1.5);
+        elseif k == 2
+            viscircles(c, r, 'Color','w','LineWidth',1.5);
+        end
+    end
+    
+    frame_tracked = getframe(gca);
+    hold off;
+    writeVideo(out_dist,frame_tracked.cdata)
+end
+close(out_dist);
+
+
+%%
+% Naloga 5
+video = VideoReader('squash.avi');
+x0 = 52.51;
+y0 = 39.51;
+width = 296.98;
+height = 208.98;
+ROI = [x0 y0 width height];
+Offset = [x0,y0];
+
+ozadje_crop = imcrop(ozadje,ROI);
+R_ozadje = ozadje_crop(:,:,1);
+G_ozadje = ozadje_crop(:,:,2);
+B_ozadje = ozadje_crop(:,:,3);
+
+
+R2_min = 115;
+G2_min = 34;
+B2_min = 44;
+R2_max = 190;
+G2_max = 80;
+B2_max = 90;
+
+
+out = VideoWriter('Squash_Segment.avi');
+
+open(out);
+for t = 1:video.NumFrames
+    frame = read(video,t);
+    frameCrop = imcrop(frame,ROI);
+    R = frameCrop(:,:,1);
+    G = frameCrop(:,:,2);
+    B = frameCrop(:,:,3);
+    
+    r = sqrt((double(R_ozadje-R)).^2 + (double(G_ozadje-G)).^2 + (double(B_ozadje-B)).^2);
+    T = 10;
+    mask = r > T;
+    mask = bwmorph(mask,'clean');
+    mask = bwmorph(mask,'open');
+    mask = bwmorph(mask,'close');
+    mask = bwmorph(mask,'open');
+    mask = bwmorph(mask,'close');
+
+    R = double(frameCrop(:,:,1));
+    G = double(frameCrop(:,:,2));
+    B = double(frameCrop(:,:,3));
+
+
+   maskB_color = (R >= R2_min & R <= R2_max) & ...
+           (G >= G2_min & G <= G2_max) & ...
+             (B >= B2_min & B <= B2_max);
+    
+
+   maskaB_final = mask & maskB_color;
+   %maskA = mask &~ maskB_color;
+   %subplot(1,3,1)
+   %imshow(maskA);
+   %subplot(1,3,2)
+   %imshow(maskB_color);
+   %subplot(1,3,3)
+   %imshow(mask);
+
+
+
+    [L, numA] = bwlabel(mask, 8);
+    [LB, numB] = bwlabel(maskaB_final, 8);
+    
+    
+    
+    stats = regionprops(L, 'Centroid','Area');   % en vnos v stats na vsak label > 0
+    areas = [stats.Area];                          % 1×N double
+    [AreaSize, Stat_indx] = sort(areas, 'descend');
+
+    statsB = regionprops(LB, 'Centroid','Area');   % en vnos v stats na vsak label > 0
+    areasB = [statsB.Area];                          % 1×N double
+    [AreaSizeB, Stat_indxB] = sort(areasB, 'descend');
+
+    cRed = statsB(Stat_indxB(1)).Centroid;
+
+   
+    
+    if numel(Stat_indx) < 2
+        cA = stats(Stat_indx(1)).Centroid + Offset;
+        cB = cA;
+    else
+         % centroida dveh največjih globalnih objektov
+        c1 = stats(Stat_indx(1)).Centroid;
+        c2 = stats(Stat_indx(2)).Centroid;
+        
+        % razdalji do rdečega
+        dst1 = norm(c1 - cRed);
+        dst2 = norm(c2 - cRed); 
+         if dst1 > dst2
+            cA = stats(Stat_indx(1)).Centroid + Offset;
+            cB = stats(Stat_indx(2)).Centroid + Offset;
+        elseif dst1 < dst2
+            cA = stats(Stat_indx(2)).Centroid + Offset;
+            cB = stats(Stat_indx(1)).Centroid + Offset; 
+        end
+
+    end
+
+
+
+
+   
+    r = 25;                        % isti polmer za vse
+    imshow(frame)
+    hold on
+        
+    viscircles(cA, r, 'Color','w','LineWidth',1.5);
+    viscircles(cB, r, 'Color','r','LineWidth',1.5);
+    
+    frame_tracked = getframe(gca);
+    hold off;
+    writeVideo(out,frame_tracked.cdata)
+end
+close(out);
+
+
+
+==== END Bine Sever | Bine Sever_22795_assignsubmission_file | Vaja4.m ====
+
+
+==== BEGIN Boris Jovanović | Boris Jovanović_23622_assignsubmission_file | drawLines.m ====
+% Function: drawLines
+% Author: Marija Ivanovska
+% Description: This function draws N lines with maximum number of votes,
+% defined by Hough transformation.
+% Usage example:
+% hotelRGB=imread('hotel.jpg'); % input image
+% N = 5; % number of lines we want to draw
+% HoughSpace = HoughTransform(BinaryImage)
+% drawLines(hotelRGB,HoughSpace,N,'Sobel');
+function []=drawLines(image,HoughSpace,N,Operator)
+k=-2:0.01:2;
+n=-200:1:200;
+maximum=zeros(N,2);
+for p=1:N % (k,n)
+[max1,index]=max(HoughSpace);
+[max2,columnId]=max(max1);
+rowId=index(columnId);
+maximum(p,1)=k(rowId);
+maximum(p,2)=n(columnId);
+HoughSpace(rowId,columnId)=0;
+for i=1:481
+    j=round(k(rowId)*i+n(columnId));
+    for widthVar=1:size(j)
+        image(j,i,1)=255;
+        image(j,i,2)=0;
+        image(j,i,3)=0;
+    end
+end
+end
+figure('Name',Operator);imshow(image);
+==== END Boris Jovanović | Boris Jovanović_23622_assignsubmission_file | drawLines.m ====
+
+==== BEGIN Boris Jovanović | Boris Jovanović_23622_assignsubmission_file | RV_LV_4.m ====
+%% Naloga 1:
+slika = imread('hotel.jpg');       
+sivinska = rgb2gray(slika);     
+%imshow(sivinska);
+
+% Sobelov operator
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];     % Horizontalni filter
+Sy = [1 2 1; 0 0 0; -1 -2 -1];     % Vertikalni filter
+
+% Konvolucija 
+Gx = conv2(double(sivinska), Sx); % Horizontalni gradient
+Gy = conv2(double(sivinska), Sy); % Vertikalni gradient
+
+% Magnituda gradientov
+G = sqrt(Gx .^ 2 + Gy .^ 2);         
+
+% Upragovljenje 
+threshold = 200;                   
+G_sobel = G > threshold;
+
+% Cannyjev detektor
+G_canny = edge(sivinska, 'Canny'); 
+
+% Prikaz rezultatov
+figure;
+subplot(1, 3, 1);
+imshow(sivinska);
+title('Originalna sivinska slika');
+
+subplot(1, 3, 2);
+imshow(G_sobel);
+title('Sobelov operator ');
+
+subplot(1, 3, 3);
+imshow(G_canny);
+title('Cannyjev detektor');
+
+ 
+%% Naloga 2:
+% Sobel
+N = 3;  % Število premic
+st_delov = 401; 
+
+k = linspace(-2, 2, st_delov); 
+n = linspace(-200, 200, st_delov);  
+
+% Inicializacija akumulatorja
+akumulator_sobel = zeros(size(k,2), size(n,2));
+
+% Glasovanje v Houghovem prostoru za Sobel
+for i = 10:size(G_sobel, 1)-10
+    for j = 10:size(G_sobel, 2)-10
+        if G_sobel(i, j) == 1 %piksel je del roba
+            for l = 1:401
+                for m = 1:401
+                    % y = k * j + n 
+                    y_pred = round(k(l) * j + n(m));
+                    if y_pred == i
+                        akumulator_sobel(l, m) = akumulator_sobel(l, m) + 1;
+                    end
+                end
+            end
+        end
+    end
+end
+
+figure;
+imshow(akumulator_sobel / max(max(akumulator_sobel))); %največja vrednost v matriki
+title('Houghov prostor (Sobel)');
+
+% Izris premic 
+drawLines(slika, akumulator_sobel, N, 'Sobel');
+
+%% Canny
+akumulator_canny = zeros(size(k,2), size(n,2));
+N=5;
+k = linspace(-2, 2, 401);
+n = linspace(-200, 200, 401);
+
+for i = 10:size(G_canny, 1)-10
+    for j = 10:size(G_canny, 2)-10
+        if G_canny(i, j) == 1
+            for l = 1:401
+                for m = 1:401
+                    % Izračunaj vrednost y = k * j(x) + n za vsako točko
+                    y_pred = round(k(l) * j + n(m));
+                    if y_pred == i
+                        akumulator_canny(l, m) = akumulator_canny(l, m) + 1;
+                    end
+                end
+            end
+        end
+    end
+end
+
+figure;
+imshow(akumulator_canny / max(max(akumulator_canny))); %največja vrednost v matriki
+title('Houghov prostor (Canny)');
+
+% Izris premic na izvirno sliko
+drawLines(slika, akumulator_canny, N, 'Canny');
+
+%% Naloga 3:
+video = VideoReader('squash.avi');
+
+% Parametri za izbiro slik
+n = 10; % vsaka 10 slika
+frames = 80; % skupno število slik 
+
+% dimenzije
+vidHeight = video.Height;
+vidWidth = video.Width;
+
+% 4D matika
+frame_stack = zeros(vidHeight, vidWidth, 3, frames, 'uint8');
+
+frame_idx = 1;
+for i = 1:n:frames*n
+    video.CurrentTime = (i-1) / video.FrameRate; %dobis s, kdaj se slika nahaja v videu
+    frame = readFrame(video);
+    frame_stack(:,:,:,frame_idx) = frame;
+    frame_idx = frame_idx + 1;
+end
+
+% Izračun mediane po dimenziji-4.
+ozadje = median(frame_stack, 4);
+
+ozadje = uint8(ozadje);
+figure;
+imshow(ozadje);
+title('Izračunano ozadje z median filtrom');
+imwrite(ozadje, 'ozadje.png');
+
+%% Naloga 4:
+video = VideoReader('squash.avi');
+ozadje = imread('ozadje.png');
+
+% Parametri
+threshold = 60; 
+outputVideo = VideoWriter('igralci.avi');
+open(outputVideo);
+
+while hasFrame(video)
+    frame = readFrame(video);
+    
+    % Izračun evklidske razdalje med sliko in ozadjem
+    diff = sqrt(sum((double(frame) - double(ozadje)).^2, 3));
+
+    % Binarizacija s pragom
+    binaryImage = diff > threshold;
+    
+    % morfološke operacije
+    binaryImage = bwmorph(binaryImage, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryImage = bwmorph(binaryImage, 'clean'); % odstrani 'izoliran piksel'
+    binaryImage = bwmorph(binaryImage, 'majority'); % piksli se nastavijo glede na večino sosednjih vrednosti.
+    
+    % Iskanje povezanih komponent
+    labeledImage = bwlabel(binaryImage);
+    stats = regionprops(labeledImage, 'Centroid', 'Area'); %geometrijske lastnosti povezanih komponent
+    
+    % Preverimo, če imamo vsaj dve komponenti
+    if numel(stats) >= 2
+        % Iskanje dveh največjih področij (igralcev)
+        [~, idx] = maxk([stats.Area], 2); % % dve največji področji
+        centroid1 = stats(idx(1)).Centroid;
+        centroid2 = stats(idx(2)).Centroid;
+        
+        circles = [centroid1, 20; centroid2, 20]; % Središče in radij kroga
+        
+        % Dodaj sliko v izhodni video z označenimi krogi
+        frameWithCircles = insertShape(frame, 'Circle', circles, ...
+                                       'Color', 'red', 'LineWidth', 3);
+    else
+        % Če ni dovolj komponent, samo prikažemo trenutni okvir brez sprememb
+        frameWithCircles = frame;
+    end
+    
+    % Zapis v izhodni video
+    writeVideo(outputVideo, frameWithCircles);
+end
+
+close(outputVideo);
+
+%% Naloga 5:
+video = VideoReader('squash.avi');
+ozadje = imread('ozadje.png'); 
+
+threshold = 40; 
+outputVideo = VideoWriter('igralci_barva.avi'); 
+open(outputVideo);
+
+frame = readFrame(video);
+imshow(frame);
+title('Kliknite na dve točki za barvo majic');
+[x, y] = ginput(2); % dve točki na sliki
+
+% RGB vrednosti 
+selectedColorA = reshape(frame(round(y(1)), round(x(1)), :), 1, 3); 
+selectedColorB = reshape(frame(round(y(2)), round(x(2)), :), 1, 3);
+
+disp('Barve za igralca A (rdeči):');
+disp(['R: ', num2str(selectedColorA(1)), ', G: ', num2str(selectedColorA(2)), ', B: ', num2str(selectedColorA(3))]);
+
+disp('Barve za igralca B (beli):');
+disp(['R: ', num2str(selectedColorB(1)), ', G: ', num2str(selectedColorB(2)), ', B: ', num2str(selectedColorB(3))]);
+
+while hasFrame(video)
+    frame = readFrame(video);
+    
+    % Izračun evklidske razdalje med sliko in ozadjem
+    diff = sqrt(sum((double(frame) - double(background)).^2, 3));
+    binaryImage = diff > threshold;
+    
+    % Morfološke operacije 
+    binaryImage = bwmorph(binaryImage, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryImage = bwmorph(binaryImage, 'clean'); % odstrani 'izoliran piksel'
+    binaryImage = bwmorph(binaryImage, 'majority'); % Piksli se nastavijo glede na večino sosednjih vrednosti.
+    
+    % Igralec A
+    R = frame(:,:,1);
+    G = frame(:,:,2);
+    B = frame(:,:,3);
+    
+    tolerance = 35; % Toleranca za barve
+    binaryA = (R >= (selectedColorA(1) - tolerance) & R <= (selectedColorA(1) + tolerance)) & ...
+              (G >= (selectedColorA(2) - tolerance) & G <= (selectedColorA(2) + tolerance)) & ...
+              (B >= (selectedColorA(3) - tolerance) & B <= (selectedColorA(3) + tolerance));
+    binaryA = uint8(binaryA) * 255;
+    
+    % Igralec B
+    binaryB = (R >= (selectedColorB(1) - tolerance) & R <= (selectedColorB(1) + tolerance)) & ...
+              (G >= (selectedColorB(2) - tolerance) & G <= (selectedColorB(2) + tolerance)) & ...
+              (B >= (selectedColorB(3) - tolerance) & B <= (selectedColorB(3) + tolerance));
+    binaryB = uint8(binaryB) * 255;
+    
+    % Morfološke operacije 
+    binaryA = bwmorph(binaryA, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+    binaryB = bwmorph(binaryB, 'open'); % odstrani manjše povezane komponente, erozija+dilacija
+
+    % Iskanje povezanih komponent za igralca A in B
+    labeledA = bwlabel(binaryA);
+    labeledB = bwlabel(binaryB);
+    
+    %geometrijske lastnosti povezanih komponent
+    statsA = regionprops(labeledA, 'Centroid', 'Area');
+    statsB = regionprops(labeledB, 'Centroid', 'Area');
+    
+    if ~isempty(statsA) && ~isempty(statsB) %da nista prazna
+        % Iskanje dveh največjih področij 
+        [~, idxA] = max([statsA.Area]);
+        [~, idxB] = max([statsB.Area]);
+        
+        centroidA = statsA(idxA).Centroid;
+        centroidB = statsB(idxB).Centroid;
+        
+        % oznaci igralca
+        frameWithCircles = insertShape(frame, 'Circle', [centroidA, 30], ...
+                                       'Color', 'red', 'LineWidth', 3);
+        frameWithCircles = insertShape(frameWithCircles, 'Circle', [centroidB, 30], ...
+                                       'Color', 'white', 'LineWidth', 3);
+        
+        frameWithCircles = insertText(frameWithCircles, centroidA, 'A', 'FontSize', 18, 'TextColor', 'red');
+        frameWithCircles = insertText(frameWithCircles, centroidB, 'B', 'FontSize', 18, 'TextColor', 'white');
+    else
+        % Če ni dovolj komponent, samo prikažemo trenutni okvir brez sprememb
+        frameWithCircles = frame;
+    end
+    
+    writeVideo(outputVideo, frameWithCircles);
+end
+
+close(outputVideo);
+==== END Boris Jovanović | Boris Jovanović_23622_assignsubmission_file | RV_LV_4.m ====
+
+
+==== BEGIN Domen Hauko & Gregor Turk | Domen Hauko_22775_assignsubmission_file + Gregor Turk_22783_assignsubmission_file | drawLines.m ====
+% Function: drawLines
+% Author: Marija Ivanovska
+% Description: This function draws N lines with maximum number of votes,
+% defined by Hough transformation.
+% Usage example:
+% hotelRGB=imread('hotel.jpg'); % input image
+% N = 5; % number of lines we want to draw
+% HoughSpace = HoughTransform(BinaryImage)
+% drawLines(hotelRGB,HoughSpace,N,'Sobel');
+function []=drawLines(image,HoughSpace,N,Operator)
+k=-2:0.01:2;
+n=-200:1:200;
+maximum=zeros(N,2);
+for p=1:N % (k,n)
+[max1,index]=max(HoughSpace);
+[max2,columnId]=max(max1);
+rowId=index(columnId);
+maximum(p,1)=k(rowId);
+maximum(p,2)=n(columnId);
+HoughSpace(rowId,columnId)=0;
+for i=1:481
+    j=round(k(rowId)*i+n(columnId));
+    for widthVar=1:numel(j)
+        image(j,i,1)=255;
+        image(j,i,2)=0;
+        image(j,i,3)=0;
+    end
+end
+end
+figure('Name',Operator);imshow(image);
+==== END Domen Hauko & Gregor Turk | Domen Hauko_22775_assignsubmission_file + Gregor Turk_22783_assignsubmission_file | drawLines.m ====
+
+==== BEGIN Domen Hauko & Gregor Turk | Domen Hauko_22775_assignsubmission_file + Gregor Turk_22783_assignsubmission_file | vaja4_Turk_Hauko.m ====
+%% 1. sobel, canny
+
+hotel = imread("hotel.jpg");
+hotelRGB = hotel;
+hotel = rgb2gray(hotel);
+hotel = double(hotel);
+
+Sx = [1 0 -1;
+      2 0 -2;
+      1 0 -1];
+Sy = [1 2 1;
+      0 0 0;
+      -1 -2 -1];
+
+
+Gx = conv2(hotel,Sx, 'valid'); % 'same' ohrani velikost slike
+Gy = conv2(hotel,Sy, 'valid');
+G = sqrt(Gx.^2 + Gy.^2);
+th = 200;
+G_bin = (G > th);
+
+figure;
+subplot(2,2,1);
+imshow(Gx, []); % [] normalizira
+title('Sobel X');
+
+subplot(2,2,2);
+imshow(Gy, []);
+title('Sobel Y');
+
+subplot(2,2,3);
+imshow(G, []);
+title('G');
+
+subplot(2,2,4);
+imshow(G_bin);
+title('G binarna');
+
+% primerjava sobel in canny
+canny = edge(hotel, "Canny");
+
+figure;
+subplot(1,2,1);
+imshow(G_bin);
+title("Sobel");
+
+subplot(1,2,2);
+imshow(canny);
+title("Canny");
+
+
+%% 2. Hough
+
+sobel = G_bin;
+akumulator_sobel = my_hough(sobel);
+akumulator_canny = my_hough(canny);
+
+
+figure;
+subplot(1,2,1);
+imshow(akumulator_sobel,[]);
+title("Akumulator Sobel");
+
+subplot(1,2,2);
+imshow(akumulator_canny,[]);
+title("Akumulator Canny");
+
+N = 5;
+drawLines(hotelRGB, akumulator_sobel, N,'Sobel');
+drawLines(hotelRGB, akumulator_canny, N,'Canny');
+
+
+%% 3. pridobivanje ozadja
+
+squash = VideoReader("squash.avi");
+num_frames = squash.NumFrames;
+
+oneFrame = read(squash, 1);
+[h, w, c] = size(oneFrame);
+
+frames = zeros(h, w, c, numel(1:20:num_frames), 'uint8');
+i = 1;
+
+for i_frame = 1:20:num_frames
+    frames(:,:,:,i) = read(squash, i_frame);
+    i = i + 1;
+end
+
+% mode ali mediana oba delata
+background = mode(frames,4); % modus - najbolj pogost piksel
+figure;
+imshow(background);
+
+
+%% 4. detekcija podrocij in morfoloske operacije
+
+squash = VideoReader("squash.avi");
+
+squash_res = VideoWriter("squash_res.avi");
+squash_res.FrameRate = squash.FrameRate;   % enak fps kot original
+open(squash_res);
+
+bg_double = double(background);
+
+%figure;
+%hImg = imagesc(zeros(size(bg_double,1), size(bg_double,2))); % empty image
+%colormap gray;
+%colorbar;
+%title('Slika razlike (evklidska razdalja)');
+
+while hasFrame(squash)
+    frameRGB = readFrame(squash);
+    frame    = double(frameRGB);  
+    
+    diff = frame - bg_double; % (H x W x 3)
+    razlika = sqrt(sum(diff.^2, 3)); 
+
+    %set(hImg, 'CData', razlika);
+    %drawnow;   % refresh figure
+    
+    mask = (razlika >= 60);
+    
+    mask = bwmorph(mask, 'open'); % remove specks
+    mask = bwmorph(mask, 'majority'); % denoise / smooth
+    mask = bwmorph(mask, 'close'); % connect nearby pixels
+    mask = bwmorph(mask, 'fill'); % fill small holes
+    mask = bwmorph(mask, 'clean'); % remove isolated pixels again
+
+
+    [label, num] = bwlabel(mask, 8);
+    if num > 0
+        % label - binarna slika obmocij, area - koliko pikslov v vsaki regiji, bounding box - x,y,w,h
+        stats  = regionprops(label, 'Area', 'BoundingBox'); 
+        areas  = [stats.Area];
+        [~, order] = sort(areas, 'descend');
+
+        % iscemo dve najvecji regiji - dva igralca
+        % ce ni naslo dveh igralcev narisemo samo enega
+        K = min(2, num);   
+        boxes = cat(1, stats(order(1:K)).BoundingBox); 
+
+        for k = 1:K
+            frameRGB = insertShape(frameRGB, ...
+                'Rectangle', boxes(k,:), ...
+                'Color', 'red', ...
+                'LineWidth', 3);
+        end
+    end
+
+    % zapis z markerji
+    writeVideo(squash_res, frameRGB);
+end
+close(squash_res);
+
+
+%% detekcija na podlagi barve
+
+
+squash = VideoReader("squash.avi");
+
+squash_res_barve = VideoWriter("squash_res_barve.avi");
+squash_res_barve.FrameRate = squash.FrameRate;   % enak fps kot original
+open(squash_res_barve);
+
+bg_double = double(background);
+
+
+while hasFrame(squash)
+    frameRGB = readFrame(squash);
+    frame    = double(frameRGB);  
+    
+    diff = frame - bg_double; % (H x W x 3)
+    razlika = sqrt(sum(diff.^2, 3)); 
+
+    
+    mask = (razlika >= 60);
+    
+    mask = bwmorph(mask, 'open');
+    mask = bwmorph(mask, 'majority');
+    mask = bwmorph(mask, 'close');
+    mask = bwmorph(mask, 'fill');
+    mask = bwmorph(mask, 'clean');
+
+    % RGB mask ima vrednost 0 za ozadje in vrednost RGB kjer so igralci
+    RGB_mask = frameRGB;
+    for c = 1:3
+        RGB_mask(:,:,c) = frameRGB(:,:,c) .* uint8(mask);
+    end
+
+    [label, num] = bwlabel(mask, 8);
+    if num >= 2
+        % label - binarna slika obmocij, area - koliko pikslov v vsaki regiji, bounding box - x,y,w,h
+        stats  = regionprops(label, 'Area', 'BoundingBox'); 
+        areas  = [stats.Area];
+        [~, order] = sort(areas, 'descend');
+
+        % iscemo dve najvecji regiji - dva igralca
+        % ce ni naslo dveh igralcev narisemo samo enega
+        K = 2;   
+        boxes = cat(1, stats(order(1:K)).BoundingBox); 
+
+        scores = zeros(K,1);
+        for k = 1:K
+            x1 = round(boxes(k,1));
+            y1 = round(boxes(k,2));
+            w = round(boxes(k,3));
+            h = round(boxes(k,4));
+            
+            x2 = min(size(frameRGB,2), x1 + w);
+            y2 = min(size(frameRGB,1), y1 + h);
+            x1 = max(1, x1);
+            y1 = max(1, y1);
+        
+            % zanima nas regija znotraj bounding boxa
+            % znotraj bounding boxa je ozadje izloceno (RGB_mask)
+            roi = RGB_mask(y1:y2, x1:x2, :);
+        
+            % sum of RGB values inside the box
+            R = sum(roi(:,:,1), 'all');
+            G = sum(roi(:,:,2), 'all');
+            B = sum(roi(:,:,3), 'all');
+
+            scores(k) = R / (R+G+B);
+        end
+
+        % rdec bo imel visje razmerje rdecega kanala z vsemi piksli
+        [~, idx] = sort(scores, 'descend');
+        idx_red   = idx(1);
+        idx_white = idx(2);
+
+        frameRGB = insertShape(frameRGB, ...
+            'Rectangle', boxes(idx_white,:), ...
+            'Color', 'white', ...
+            'LineWidth', 3);
+        
+        frameRGB = insertText(frameRGB, ...
+            boxes(idx_white,1:2), 'Player A', ...
+            'TextColor', 'white', 'BoxOpacity', 0);
+        
+        frameRGB = insertShape(frameRGB, ...
+            'Rectangle', boxes(idx_red,:), ...
+            'Color', 'red', ...
+            'LineWidth', 3);
+        
+        frameRGB = insertText(frameRGB, ...
+            boxes(idx_red,1:2), 'Player B', ...
+            'TextColor', 'red', 'BoxOpacity', 0);
+    end
+
+    writeVideo(squash_res_barve, frameRGB);
+end
+close(squash_res_barve);
+
+
+%%
+
+function akumulator = my_hough(edges)
+
+    k = linspace(-2, 2, 401);
+
+    akumulator = zeros(401, 401); % 401 x 401
+    
+    
+    for y=1:size(edges,1)
+        for x=1:size(edges,2)
+    
+            if edges(y,x) ~= 0
+                for i_k = 1:length(k)
+                    n = -x* k(i_k) + y;
+                    if n > 200 || n < -200
+                        continue
+                    end
+                    i_n = round(n + 201);
+                    akumulator(i_k, i_n) = akumulator(i_k, i_n) + 1;
+                end
+                
+            end
+        end
+    end
+
+end
+==== END Domen Hauko & Gregor Turk | Domen Hauko_22775_assignsubmission_file + Gregor Turk_22783_assignsubmission_file | vaja4_Turk_Hauko.m ====
+
+
+==== BEGIN Filip Kocjančič & VALENTIN NEMANIČ | Filip Kocjančič_22780_assignsubmission_file + VALENTIN NEMANIČ_22796_assignsubmission_file | Vaja_4_koncna.m ====
+%% 1. naloga – Izločanje robov (Sobel + Canny)
+
+slika = imread("hotel.jpg");
+slika = rgb2gray(slika);
+
+% Canny 
+canny = edge(slika, "canny");
+
+% Ročni Sobel
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];
+Sy = [1 2 1; 0 0 0; -1 -2 -1];
+
+Gx = imfilter(double(slika), Sx, "replicate");
+Gy = imfilter(double(slika), Sy, "replicate");
+
+Gmag = sqrt(Gx.^2 + Gy.^2);
+
+prag_sobel = 220;
+sobel_bin = Gmag > prag_sobel;
+
+figure;
+subplot(1,2,1);
+imshow(canny);
+title('Canny');
+
+subplot(1,2,2);
+imshow(sobel_bin);
+title('Ročni Sobel – binarno');
+
+
+%% 2. naloga – Houghova transformacija (Canny + Sobel)
+
+k_interval = linspace(-2, 2, 401);
+N = 8;  
+
+% --- Hough za Canny ---
+akumulator_c = zeros(401);
+
+for y = 1:size(canny, 1)
+    for x = 1:size(canny, 2)
+        if canny(y, x) == 1
+            for i = 1:length(k_interval)
+                k_tmp = k_interval(i);
+                n = round(y - x * k_tmp);
+                if n >= -200 && n <= 200
+                    akumulator_c(n+201, round(k_tmp*100 + 201)) = ...
+                        akumulator_c(n+201, round(k_tmp*100 + 201)) + 1;
+                end
+            end
+        end
+    end
+end
+
+[~, indeksi] = sort(akumulator_c(:), 'descend');
+indeksi_najvecjih = indeksi(1:N);
+[vrstica, stolpec] = ind2sub(size(akumulator_c), indeksi_najvecjih);
+n_c = vrstica - 201;
+k_c = (stolpec - 201)/100;
+
+x = 1:1:size(canny, 2);
+
+figure;
+imshow(canny);
+title('Najdene premice na Canny');
+hold on;
+for i = 1:N
+    y = k_c(i) * x + n_c(i);
+    plot(x, y, 'r', 'LineWidth', 1);
+end
+hold off;
+
+% --- Hough za Sobel ---
+akumulator_s = zeros(401);
+
+for y = 1:size(sobel_bin, 1)
+    for x = 1:size(sobel_bin, 2)
+        if sobel_bin(y, x) == 1
+            for i = 1:length(k_interval)
+                k_tmp = k_interval(i);
+                n = round(y - x * k_tmp);
+                if n >= -200 && n <= 200
+                    akumulator_s(n+201, round(k_tmp*100 + 201)) = ...
+                        akumulator_s(n+201, round(k_tmp*100 + 201)) + 1;
+                end
+            end
+        end
+    end
+end
+
+[~, indeksi] = sort(akumulator_s(:), 'descend');
+indeksi_najvecjih = indeksi(1:N);
+[vrstica, stolpec] = ind2sub(size(akumulator_s), indeksi_najvecjih);
+n_s = vrstica - 201;
+k_s = (stolpec - 201)/100;
+
+x = 1:1:size(sobel_bin, 2);
+
+figure;
+imshow(sobel_bin);
+title('Najdene premice na ročnem Sobel');
+hold on;
+for i = 1:N
+    y = k_s(i) * x + n_s(i);
+    plot(x, y, 'r', 'LineWidth', 1);
+end
+hold off;
+
+
+%% 3. naloga – Pridobivanje ozadja (SKRAJŠAN video – kot v tvoji kodi)
+
+videoObj = VideoReader("squash.avi");
+video = read(videoObj, [1 Inf]); 
+
+skrajsan_video = video(:, :, :, 1:20:size(video, 4));
+
+
+preoblikovan_video = reshape(skrajsan_video, [], 3, size(skrajsan_video, 4));
+ozadje = mode(preoblikovan_video, 3);
+ozadje = reshape(ozadje, size(skrajsan_video, 1), size(skrajsan_video, 2), 3);
+
+figure;
+imshow(uint8(ozadje));
+title('Ocenjeno ozadje (iz skrajšanega videa)');
+
+
+%% 4. naloga – TVOJA DETEKCIJA + shranjevanje težišč
+
+numFrames = size(skrajsan_video, 4);
+tezisca = cell(1, numFrames);
+
+for i = 1:numFrames
+
+    trenutni_frame = skrajsan_video(:, :, :, i);
+    razlika = sqrt(sum((ozadje - trenutni_frame).^2, 3));
+    razlika = uint8(razlika / max(razlika(:)) * 255);
+    razlika = imgaussfilt(razlika, 7.1);
+    binarna_slika = imbinarize(razlika, 0.5);
+    binarna_slika = bwmorph(binarna_slika, 'erode');
+    binarna_slika = bwmorph(binarna_slika, 'erode');
+    binarna_slika = bwmorph(binarna_slika, 'dilate');
+    binarna_slika = bwmorph(binarna_slika, 'dilate');
+    oznake = bwlabel(binarna_slika);
+    tezisca{i} = regionprops(oznake, 'Centroid');
+
+
+
+end
+
+stranica = 10;
+
+
+video_det = skrajsan_video;
+
+for i = 1:numFrames
+
+    trenutne_koordinate = tezisca{i};
+
+    if size(trenutne_koordinate, 1) == 2
+
+        for j = 1:2
+
+            trenutna = trenutne_koordinate(j);
+            x = round(trenutna.Centroid(1));
+            y = round(trenutna.Centroid(2));
+
+            y1 = max(1, y-stranica/2);
+            y2 = min(size(video_det, 1), y+stranica/2);
+            x1 = max(1, x-stranica/2);
+            x2 = min(size(video_det, 2), x+stranica/2);
+
+            video_det(y1:y2, x1:x2, 1, i) = 0;
+            video_det(y1:y2, x1:x2, 2, i) = 255;
+            video_det(y1:y2, x1:x2, 3, i) = 0;
+
+        end
+
+    elseif size(trenutne_koordinate, 1) == 1
+
+        x = round(trenutne_koordinate.Centroid(1));
+        y = round(trenutne_koordinate.Centroid(2));
+
+        y1 = max(1, y-stranica/2);
+        y2 = min(size(video_det, 1), y+stranica/2);
+        x1 = max(1, x-stranica/2);
+        x2 = min(size(video_det, 2), x+stranica/2);
+
+        video_det(y1:y2, x1:x2, 1, i) = 0;
+        video_det(y1:y2, x1:x2, 2, i) = 255;
+        video_det(y1:y2, x1:x2, 3, i) = 0;
+
+    end
+
+end
+
+implay(video_det);   
+
+%% 5. naloga – Identifikacija igralcev
+
+video_id  = skrajsan_video;
+numFrames = size(video_id, 4);
+
+stranica_id = 20;
+pol_id      = stranica_id / 2;
+
+imaInsertText = exist('insertText', 'file') == 2;
+
+% Parametri HSV za rdečo
+Smin = 0.65;
+Hlo  = 0.03;
+Hhi  = 0.97;
+
+rad_patch = 5;
+
+% Histereza
+diffThresh  = 0.10;
+minRedScore = 0.01;
+
+prevIdxRed = [];
+afterMerge = false;
+
+for i = 1:numFrames
+
+    objs = tezisca{i};
+    nDet = numel(objs);
+
+    if nDet == 0
+        continue;
+    end
+
+    nObj = min(nDet, 2);
+    objs = objs(1:nObj);
+
+    frame_rgb = skrajsan_video(:, :, :, i);
+    frame_out = frame_rgb;
+
+    hsv = rgb2hsv(frame_rgb);
+    H = hsv(:,:,1);
+    S = hsv(:,:,2);
+
+    redScore = zeros(1, nObj);
+    cent = zeros(nObj, 2);
+
+    for j = 1:nObj
+        c = objs(j).Centroid;
+        cent(j,:) = c;
+
+        x = round(c(1));
+        y = round(c(2));
+
+        y1p = max(1, y - rad_patch);  
+        y2p = min(size(H,1), y + rad_patch);
+        x1p = max(1, x - rad_patch);  
+        x2p = min(size(H,2), x + rad_patch);
+
+        patchH = H(y1p:y2p, x1p:x2p);
+        patchS = S(y1p:y2p, x1p:x2p);
+
+        maskRed = (patchS > Smin) & (patchH < Hlo | patchH > Hhi);
+        redScore(j) = sum(maskRed(:)) / numel(maskRed);
+    end
+
+    if nObj == 2
+
+        if isempty(prevIdxRed) || afterMerge
+            [~, idxRed] = max(redScore);
+            prevIdxRed = idxRed;
+            afterMerge = false;
+        else
+            [~, idxCand] = max(redScore);
+            idxOther = 3 - idxCand;
+
+            diffScore = redScore(idxCand) - redScore(idxOther);
+
+            if max(redScore) < minRedScore
+                idxRed = prevIdxRed;
+            else
+                if idxCand ~= prevIdxRed && diffScore <= diffThresh
+                    idxRed = prevIdxRed;
+                else
+                    idxRed = idxCand;
+                end
+            end
+
+            prevIdxRed = idxRed;
+        end
+
+        idxWhite = 3 - prevIdxRed;
+
+        for j = 1:2
+            x = round(cent(j,1));
+            y = round(cent(j,2));
+
+            y1 = max(1, y - pol_id);  
+            y2 = min(size(frame_out,1), y + pol_id);
+            x1 = max(1, x - pol_id);  
+            x2 = min(size(frame_out,2), x + pol_id);
+
+            if j == prevIdxRed
+                oznaka      = '2';
+                barvaKvadra = [255 0 0];
+                barvaTeksta = 'yellow';
+            else
+                oznaka      = '1';
+                barvaKvadra = [255 255 255];
+                barvaTeksta = 'black';
+            end
+
+            frame_out(y1:y2, x1:x2, 1) = barvaKvadra(1);
+            frame_out(y1:y2, x1:x2, 2) = barvaKvadra(2);
+            frame_out(y1:y2, x1:x2, 3) = barvaKvadra(3);
+
+            if imaInsertText
+                frame_out = insertText(frame_out, [x, max(1,y1-10)], oznaka, ...
+                    'FontSize', 18, 'BoxOpacity', 0, 'TextColor', barvaTeksta);
+            end
+        end
+
+    else
+        afterMerge = true;
+
+        x = round(cent(1,1));
+        y = round(cent(1,2));
+
+        y1 = max(1, y - pol_id);  
+        y2 = min(size(frame_out,1), y + pol_id);
+        x1 = max(1, x - pol_id);  
+        x2 = min(size(frame_out,2), x + pol_id);
+
+        frame_out(y1:y2, x1:x2, 1) = 0;
+        frame_out(y1:y2, x1:x2, 2) = 255;
+        frame_out(y1:y2, x1:x2, 3) = 0;
+
+        if imaInsertText
+            frame_out = insertText(frame_out, [x, max(1,y1-10)], 'M', ...
+                'FontSize', 18, 'BoxOpacity', 0, 'TextColor', 'yellow');
+        end
+    end
+
+    video_id(:,:,:,i) = frame_out;
+end
+
+implay(video_id);
+
+==== END Filip Kocjančič & VALENTIN NEMANIČ | Filip Kocjančič_22780_assignsubmission_file + VALENTIN NEMANIČ_22796_assignsubmission_file | Vaja_4_koncna.m ====
+
+
+==== BEGIN Gašper Lončar | Gašper Lončar_22782_assignsubmission_file | drawLines.m ====
+% Function: drawLines
+% Author: Marija Ivanovska
+% Description: This function draws N lines with maximum number of votes,
+% defined by Hough transformation.
+% Usage example:
+% hotelRGB=imread('hotel.jpg'); % input image
+% N = 5; % number of lines we want to draw
+% HoughSpace = HoughTransform(BinaryImage)
+% drawLines(hotelRGB,HoughSpace,N,'Sobel');
+function []=drawLines(image,HoughSpace,N,Operator)
+k=-2:0.01:2;
+n=-200:1:200;
+maximum=zeros(N,2);
+for p=1:N % (k,n)
+[max1,index]=max(HoughSpace);
+[max2,columnId]=max(max1);
+rowId=index(columnId);
+maximum(p,1)=k(rowId);
+maximum(p,2)=n(columnId);
+HoughSpace(rowId,columnId)=0;
+for i=1:481
+    j=round(k(rowId)*i+n(columnId));
+    for widthVar=1:numel(j)
+        image(j,i,1)=255;
+        image(j,i,2)=0;
+        image(j,i,3)=0;
+    end
+end
+end
+figure('Name',Operator);imshow(image);
+==== END Gašper Lončar | Gašper Lončar_22782_assignsubmission_file | drawLines.m ====
+
+==== BEGIN Gašper Lončar | Gašper Lončar_22782_assignsubmission_file | RVlab4.m ====
+%% 4. vaja 1. naloga
+hotel = imread("hotel.jpg");
+hotel_siv = rgb2gray(hotel);
+hotel_siv = im2double(hotel_siv);
+
+sobelX = [1 0 -1; 2 0 -2; 1 0 -1];
+sobelY = [1 2 1; 0 0 0; -1 -2 -1];
+
+gradX = conv2(hotel_siv, sobelX,'same');
+gradY = conv2(hotel_siv, sobelY, 'same');
+
+grad = sqrt(gradX.^2 + gradY.^2);
+binarn = graythresh(grad);  % prag od 0 do 1
+sobel = grad >= binarn;
+
+canny = edge(hotel_siv,"canny", [0.05 0.15], 1.2);  % sigma na koncu
+
+figure; 
+subplot(1,2,1); imshow(sobel);
+subplot(1,2,2); imshow(canny);
+
+%% hough transform
+hotel2d_canny = canny;
+hotel2d_sobel = sobel;
+
+k = -2:0.01:2;
+n = -200:1:200;
+Nk = length(k);
+Nn = length(n);
+
+H_prostor = zeros(Nk,Nn);
+[visina, sirina] = size(hotel2d_canny);
+
+[x, y] = meshgrid(1:sirina, 1:visina);
+stolpci = x(hotel2d_canny);
+vrstice = y(hotel2d_canny);
+
+robovi = 0.5:1:(Nn+0.5);
+for i = 1:Nk
+    stevecN = vrstice - k(i).*stolpci;      % n = y 'kx
+    indexN = round(stevecN - n(1) + 1);     % od 1 do Nn
+    maska = (indexN >= 1) & (indexN <= Nn);
+    stevec = histcounts(indexN(maska), robovi);
+    H_prostor(i, :) = H_prostor(i, :) + stevec;
+end
+
+figure; imagesc(n, k, H_prostor); axis xy; xlabel('n'); ylabel('k'); colorbar;
+
+
+N = 5; % number of lines we want to draw
+%H_prostor = HoughTransform(hotel);
+drawLines(hotel,H_prostor,N,'Canny');
+==== END Gašper Lončar | Gašper Lončar_22782_assignsubmission_file | RVlab4.m ====
+
+==== BEGIN Gašper Lončar | Gašper Lončar_22782_assignsubmission_file | RVlab4_video.m ====
+%% RV4_video
+C=VideoReader('squash.avi');
+orig_okvirji=read(C,[1 Inf]);
+video_size=size(orig_okvirji);
+st_frameov=video_size(4);
+korak = 10;
+index = 1:korak:st_frameov;
+N = numel(index);
+
+
+% prazna tabelca velikosti videa za število frameov
+okvirji = orig_okvirji(:,:,:, index); 
+ozadje = zeros(video_size(1), video_size(2), 3, 'uint8');
+
+for i =1:3
+    M = reshape(okvirji(:,:,i,:), video_size(1)*video_size(2),N);
+    m = mode(M, 2);     % najbolj pogosti
+    ozadje(:,:,i) = reshape(uint8(m), video_size(1), video_size(2));
+end
+
+imshow(ozadje); imwrite(ozadje,'ozadje.png');
+
+%% 4. naloga
+
+[visina, sirina, ~, st_frameov] = size(orig_okvirji);
+
+% slika razlike od ozadja
+prvi_frame = orig_okvirji(:,:,:,1);
+evklidska_razlika = sqrt(sum((double(prvi_frame) - double(ozadje)).^2, 3));
+prag = max(30, 0.35 * max(evklidska_razlika(:)));
+
+figure; imshow(prvi_frame); impixelinfo;
+
+figure; imagesc(evklidska_razlika); colormap gray; axis image; colorbar;
+
+% video z označenima igralcema (kvadratki)
+vid_id = VideoWriter('squash_identiteta.avi');
+vid_id.FrameRate = C.FrameRate;
+open(vid_id);
+
+r = 5;  % polmer kvadrata
+
+% ignoriramo območje na levi strani igrišča z navijači
+rob = round(0.1*sirina);
+roiMaska = true(visina, sirina);
+roiMaska(:,1:rob) = false;
+
+% identiteta
+ident = false;
+rdec = [255 0 0];
+bel = [255 255 255];
+
+for i = 1:st_frameov
+    okvir = orig_okvirji(:,:,:,i);                          % RGB uint8 okvir
+
+    % slika evklidske razlike 
+    evd_raz = sqrt(sum((double(okvir) - double(ozadje)).^2, 3));
+
+    % morfologije
+    BW = evd_raz > prag;
+    BW = bwmorph(BW, 'clean');        % odstrani osamljene piksle (sol)
+    BW = bwmorph(BW, 'majority');     % večinsko glasovanje (gladi šum)
+    BW = bwmorph(BW, 'close');        % morfološko zapiranje (zapre reže)
+    BW = bwmorph(BW, 'fill');         % zapolni luknje znotraj objektov
+    BW = bwmorph(BW, 'spur', 2);      % odstrani kratke "resice" (2 iteraciji)
+
+    BW = BW & roiMaska;
+
+    % 2 največji razliki za detekcijo
+    [L, num] = bwlabel(BW, 8);
+    Fout = okvir;
+
+    if num > 0
+        S = regionprops(L, 'Area', 'Centroid', 'PixelIdxList');
+
+        % vzemi največji 2 področji
+        [~, idx] = maxk([S.Area], min(2,num));
+
+        R_delta = 85;   % R mora biti toliko večji od G in B za rdeče
+        R_min = 140;    % minimalna R 
+        B_min = 120;    % minimalna svetlost za belo
+        B_max = 30;
+
+        R = double(okvir(:,:,1));
+        G = double(okvir(:,:,2));
+        B = double(okvir(:,:,3));
+
+        for k = 1:numel(idx)
+            c = round(S(idx(k)).Centroid);  % [x y]
+            cx = max(1, min(sirina, c(1)));
+            cy = max(1, min(visina, c(2)));
+
+            % majhen kvadratek v težišču
+            x1 = max(1, cx - r); x2 = min(sirina, cx + r);
+            y1 = max(1, cy - r); y2 = min(visina, cy + r);
+
+            piksel = S(idx(k)).PixelIdxList;
+            Rm = mean(R(piksel));
+            Gm = mean(G(piksel));
+            Bm = mean(B(piksel));
+            I = (Rm+Gm+Bm)/3;
+            razl = max([Rm,Gm,Bm]) - min([Rm,Gm,Bm]);
+
+            jeRdec = (Rm > Gm + R_delta) && (Rm > Bm + R_delta) && (Rm > R_min);
+            jeBel = (I > B_min) && (razl < B_max);
+
+            if isRed
+                barva = rdec;   
+            elseif isWhite
+                barva = bel; 
+            else
+                % po večjem R ali po svetlosti
+                if (Rm - max(Gm,Bm)) > 15
+                    barva = rdec;
+                else
+                barva = bel;
+                end
+            end
+
+            Fout(y1:y2, x1:x2, 1) = barva(1);          
+            Fout(y1:y2, x1:x2, 2) = barva(2);
+            Fout(y1:y2, x1:x2, 3) = barva(3);
+        end
+    end
+    
+    writeVideo(vid_id, Fout);
+
+end
+
+close(vid_id);
+==== END Gašper Lončar | Gašper Lončar_22782_assignsubmission_file | RVlab4_video.m ====
+
+
+==== BEGIN Jakob Ian Pintarič & Jakob Melkić Sitar | Jakob Ian Pintarič_22788_assignsubmission_file + Jakob Melkić Sitar_22773_assignsubmission_file | vaja4.m ====
+%% naloga 1
+
+hotel = imread('hotel.jpg');
+imgGray = rgb2gray(hotel);
+imgGray = double(imgGray);
+
+Sx = [ 1  0 -1;
+       2  0 -2;
+       1  0 -1 ];
+
+Sy = [ 1  2  1;
+       0  0  0;
+      -1 -2 -1 ];
+
+Gx = conv2(imgGray, Sx, 'same');
+Gy = conv2(imgGray, Sy, 'same');
+
+G = sqrt(Gx.^2 + Gy.^2);
+
+G = G / max(G(:));
+
+BW_sobel = G > 0.25;
+
+BW_canny = edge(uint8(imgGray), 'canny');
+
+% Primerjava
+figure;
+subplot(1,3,1); imshow(uint8(imgGray));title('Sivinska');
+subplot(1,3,2); imshow(BW_sobel); title('Sobel');
+subplot(1,3,3); imshow(BW_canny); title('Canny');
+
+%% nalgoa 2
+
+H_sobel = HoughTransform(BW_sobel);
+H_canny = HoughTransform(BW_canny);
+
+N = 5;
+
+drawLines(hotel, H_sobel, N, 'Hough + Sobel');
+drawLines(hotel, H_canny, N, 'Hough + Canny');
+
+%% naloga 3
+
+v = VideoReader('squash.avi');
+
+step = 10;          
+frames = [];
+
+cnt = 1;
+idx = 1;
+
+while hasFrame(v)
+    frame = readFrame(v);
+
+    if mod(cnt, step) == 0
+        frames(:,:,:,idx) = frame;
+        idx = idx + 1;
+    end
+
+    cnt = cnt + 1;
+end
+
+background = median(frames, 4);
+background = uint8(background);
+
+figure;
+imshow(background);
+title('Ozadje posnetka');
+%% naloga 4
+v = VideoReader('squash.avi');
+out = VideoWriter('squash_sledenje.avi');
+open(out);
+
+frame_id = 0;
+
+while hasFrame(v)
+    frame = readFrame(v);
+    frame_id = frame_id + 1;
+
+    % 1. Slika razlike (evklidska razdalja RGB)
+    diffImg = double(frame) - double(background);
+    diffImg = sqrt( diffImg(:,:,1).^2 + diffImg(:,:,2).^2 + diffImg(:,:,3).^2 );
+
+    % 2. Prikaz slike razlike
+    if frame_id == 1
+        figure;
+        imagesc(diffImg);
+        colormap gray;
+        colorbar;
+        title('Slika razlike');
+    end
+
+    % 3. Pragovanje
+    BW = diffImg > 40;
+
+    % 4. Morfološke operacije za odstranjevanje šuma
+    BW = bwmorph(BW, 'open');
+    BW = bwmorph(BW, 'close');
+    BW = bwmorph(BW, 'fill');
+
+    % 5. Označevanje povezanih področij
+    [L, num] = bwlabel(BW);
+
+    stats = regionprops(L, 'Area', 'Centroid', 'BoundingBox');
+
+    % 6. Izris pozicij na izvirno sliko
+    figure(1); clf;
+    imshow(frame);
+    hold on;
+
+    for i = 1:num
+        if stats(i).Area > 300
+            c = stats(i).Centroid;
+            rectangle('Position', stats(i).BoundingBox, ...
+                      'EdgeColor', 'r', 'LineWidth', 2);
+            plot(c(1), c(2), 'ro', 'MarkerSize', 8, 'LineWidth', 2);
+        end
+    end
+
+    hold off;
+
+    % 7. Zapis v video
+    F = getframe(gca);
+    writeVideo(out, F.cdata);
+end
+
+close(out);
+
+%% naloga 5
+v = VideoReader('squash.avi');
+out = VideoWriter('squash_sledenje1.avi');
+open(out);
+
+frame_id = 0;
+
+while hasFrame(v)
+
+    frame = readFrame(v);
+    frame_id = frame_id + 1;
+
+    diffImg = double(frame) - double(background);
+    diffImg = sqrt( diffImg(:,:,1).^2 + diffImg(:,:,2).^2 + diffImg(:,:,3).^2 );
+
+    if frame_id == 1
+        figure;
+        imagesc(diffImg);
+        colormap gray;
+        colorbar;
+        title('Slika razlike');
+    end
+
+    BW = diffImg > 40;
+
+    BW = bwmorph(BW, 'open');
+    BW = bwmorph(BW, 'close');
+    BW = bwmorph(BW, 'fill');
+
+    [L, num] = bwlabel(BW);
+    stats = regionprops(L, 'Area', 'Centroid', 'BoundingBox');
+
+    figure(1); clf;
+    imshow(frame);
+    hold on;
+
+    candidates = [];
+
+    for i = 1:num
+        if stats(i).Area > 300
+
+            bb = round(stats(i).BoundingBox);
+            bb(1) = max(bb(1),1);
+            bb(2) = max(bb(2),1);
+            bb(3) = min(bb(3), size(frame,2)-bb(1));
+            bb(4) = min(bb(4), size(frame,1)-bb(2));
+
+            roi = frame(bb(2):bb(2)+bb(4), bb(1):bb(1)+bb(3), :);
+
+            meanR = mean(roi(:,:,1),'all');
+            meanG = mean(roi(:,:,2),'all');
+            meanB = mean(roi(:,:,3),'all');
+
+            redScore = meanR - (meanG + meanB)/2;
+
+            candidates = [candidates; i, redScore];
+        end
+    end
+
+    if size(candidates,1) >= 2
+
+        [~, idx] = max(candidates(:,2));
+        idx_red = candidates(idx,1);
+
+        for i = 1:num
+            if stats(i).Area > 300
+
+                bb = stats(i).BoundingBox;
+                c = stats(i).Centroid;
+
+                if i == idx_red
+                    label = 'Igralec 1';
+                    color = 'r';
+                else
+                    label = 'Igralec 2';
+                    color = 'b';
+                end
+
+                rectangle('Position', bb, ...
+                          'EdgeColor', color, 'LineWidth', 2);
+
+                plot(c(1), c(2), 'o', ...
+                     'Color', color, 'MarkerSize', 8, 'LineWidth', 2);
+
+                text(bb(1), bb(2)-10, label, ...
+                     'Color', color, 'FontSize', 12, 'FontWeight', 'bold');
+            end
+        end
+    end
+
+    hold off;
+
+    F = getframe(gca);
+    writeVideo(out, F.cdata);
+
+end
+
+close(out);
+
+%% H transform
+function H = HoughTransform(BinaryImage)
+
+% Parametrski prostor
+k = linspace(-2, 2, 401);
+n = linspace(-200, 200, 401);
+
+H = zeros(length(k), length(n));
+
+[rows, cols] = size(BinaryImage);
+
+% Poišči robne točke
+[y_idx, x_idx] = find(BinaryImage == 1);
+
+% Glasovanje
+for i = 1:length(x_idx)
+    x = x_idx(i);
+    y = y_idx(i);
+
+    for ki = 1:length(k)
+        ni = round(y - k(ki)*x);
+
+        % preveri, ali je n znotraj intervala
+        if ni >= -200 && ni <= 200
+            n_index = ni + 201;
+            H(ki, n_index) = H(ki, n_index) + 1;
+        end
+    end
+end
+end
+==== END Jakob Ian Pintarič & Jakob Melkić Sitar | Jakob Ian Pintarič_22788_assignsubmission_file + Jakob Melkić Sitar_22773_assignsubmission_file | vaja4.m ====
+
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | drawLines.m ====
+% Function: drawLines
+% Author: Marija Ivanovska
+% Description: This function draws N lines with maximum number of votes,
+% defined by Hough transformation.
+% Usage example:
+% hotelRGB=imread('hotel.jpg'); % input image
+% N = 5; % number of lines we want to draw
+% HoughSpace = HoughTransform(BinaryImage)
+% drawLines(hotelRGB,HoughSpace,N,'Sobel');
+function []=drawLines(image,HoughSpace,N,Operator)
+k=-2:0.01:2;
+n=-200:1:200;
+maximum=zeros(N,2);
+for p=1:N % (k,n)
+[max1,index]=max(HoughSpace);
+[max2,columnId]=max(max1);
+rowId=index(columnId);
+maximum(p,1)=k(rowId);
+maximum(p,2)=n(columnId);
+HoughSpace(rowId,columnId)=0;
+for i=1:481
+    j=round(k(rowId)*i+n(columnId));
+    for widthVar=1:size(j)
+        image(j,i,1)=255;
+        image(j,i,2)=0;
+        image(j,i,3)=0;
+    end
+end
+end
+figure('Name',Operator);imshow(image);
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | drawLines.m ====
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | Naloga1in2_Vaja4.m ====
+% Naloga 1 Izlocanje robov 
+% Mihaela Temelkova & Jakob Suhadolc
+
+img = imread('hotel.jpg');
+Igray = rgb2gray(img);
+
+
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];
+Sy = [1 2 1; 0 0 0; -1 -2 -1];
+
+Gx = conv2(Igray, Sx);
+Gy = conv2(Igray, Sy);
+
+G=uint8(sqrt(Gx.^2+Gy.^2));
+edges_sobel=G>200;
+
+edges_sobel(1:2, :)       = 0;          
+edges_sobel(end-1:end, :) = 0;          
+edges_sobel(:, 1:2)       = 0;          
+edges_sobel(:, end-1:end) = 0;   
+
+edges_canny = edge(Igray, 'canny');
+
+figure;
+subplot(2,2,1); imshow(Igray); title('Sivinska slika');
+subplot(2,2,3); imshow(edges_sobel); title('Sobel');
+subplot(2,2,4); imshow(edges_canny); title('Canny');
+
+%% Naloga 2 Detekcija podrocij in morfoloske operacije
+
+%Uporabimo na sliko iz sobela in cannyja HoughTransform
+H_sobel = HoughTransform(edges_sobel);
+H_canny = HoughTransform(edges_canny);
+
+k = -2:0.01:2;
+n = -200:1:200;
+
+figure;
+imagesc(n, k, H_sobel); colormap('gray'); colorbar; xlabel('n'); ylabel('k'); title('Hough – Sobel');
+figure;
+imagesc(n, k, H_canny); colormap('gray'); colorbar; xlabel('n'); ylabel('k'); title('Hough – Canny');
+
+% Uporabimo gotovo funkcijo za risanje 5 premic
+N = 5;
+drawLines(img, H_sobel, N, 'Sobel');
+drawLines(img, H_canny, N, 'Canny');
+
+
+% Houghov algoritam
+function HoughSpace = HoughTransform(image)
+
+%definiramo intervali in houhgov prostor
+k = -2:0.01:2;
+n = -200:1:200;
+HoughSpace = zeros(length(k), length(n));
+
+%Najdemo vse piksle ki so svetli, rob
+[ys, xs] = find(image);
+
+% za vsak piksel gre cez vsake k in poracuna n, preveri ce je ta n v
+% intervalu in steje glas, ki ga posamezen piksel za kombinacijo ki,ni da 
+for idx = 1:numel(xs)
+    x = xs(idx);
+    y = ys(idx);
+    for ki = 1:length(k)
+        kval = k(ki);
+        nval = y - kval * x;
+        if nval >= -200 && nval <= 200
+            ni = round(nval + 200) + 1;
+            HoughSpace(ki, ni) = HoughSpace(ki, ni) + 1;
+        end
+    end
+end
+end
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | Naloga1in2_Vaja4.m ====
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | Naloga3_Vaja4.m ====
+% Naloga 3 – Izračun slike ozadja iz videa 
+% Mihaela Temelkova & Jakob Suhadolc
+ 
+v = VideoReader('squash.avi');
+frames = read(v, [1 Inf]);
+video_size=size(frames);
+stack = frames(:,:,:,1:20:end); %grem po cel posnetek oz frame za 20 korak
+
+% Izračun slike ozadja z mode
+bg_double = mode(stack, 4);  
+
+% Pretvori v uint8 in prikaži
+bg = uint8(bg_double);
+figure;
+imshow(bg);
+title('Ozadje');
+imwrite(bg, 'background_squash.png');
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | Naloga3_Vaja4.m ====
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | Naloga4_Vaja4.m ====
+% Naloga 4 Detekcija podrocij in morfoloske operacije
+% Mihaela Temelkova & Jakob Suhadolc
+
+
+% preberemo sliko ozadja in video
+bg = imread('background_squash.png');
+v  = VideoReader('squash.avi');
+
+% vzamemo prvi frame in izračunamo razliko z ozadjem - prikaz
+frame = readFrame(v);
+diff  = double(frame) - double(bg);      % razlika po RGB kanalih            
+diff  = sqrt(sum(diff.^2, 3));           % evklidska razdalja v RGB
+
+figure;
+imagesc(diff);
+colormap gray;
+colorbar;
+title('Prikaz razlike');
+
+% testiranje morfoloske operacije
+threshold = 60;
+bw = diff > threshold;
+bw = bwmorph(bw, 'open',2);
+bw = bwmorph(bw, 'close',2);
+bw = bwmorph(bw, 'clean');
+bw = bwmorph(bw, 'majority');
+figure
+imagesc(bw)
+colormap gray;
+colorbar;
+
+%%
+% vrnemo se na začetek in preberemo vse frame-e v 4D matriko
+v.CurrentTime = 0;
+frames = read(v, [1 Inf]);              
+video_size = size(frames);
+
+% pripravimo nov video za rezultat
+new_video = zeros(video_size, 'uint8');
+
+% prag med igralcem in ozadjem
+threshold = 60;
+
+% območje igrišča (brez publike)
+row_min = 50; row_max = 250;
+col_min = 50; col_max = 320;
+
+for f = 1:video_size(4)
+
+    % vzamemo f-ti frame
+    frame = frames(:,:,:,f);
+
+    % izračunamo sliko razlike
+    diff  = double(frame) - double(bg);
+    diff  = sqrt(sum(diff.^2, 3));
+
+    % 1 = dovolj drugačno od ozadja → kandidat za igralca
+    bw = diff > threshold;
+
+    % zadržimo samo pixle v območju igrišča, ostalo = 0
+    bw_filtered = false(size(bw));
+    bw_filtered(row_min:row_max, col_min:col_max) = ...
+        bw(row_min:row_max, col_min:col_max);
+    bw = bw_filtered;
+
+    % morfološko čiščenje binarne slike
+    bw = bwmorph(bw, 'open',2);
+    bw = bwmorph(bw, 'close',2);
+    bw = bwmorph(bw, 'clean');
+    bw = bwmorph(bw, 'majority');
+
+    % označimo povezane komponente
+    [labels, num] = bwlabel(bw);
+    stats = regionprops(labels, 'Area', 'BoundingBox');
+
+    boxes   = [];   % seznam pravokotnikov ali krogov
+    centers = [];   % težišča igralcev
+
+    if num >= 1
+        areas = [stats.Area];
+        [~, order] = sort(areas, 'descend');
+        k = min(2, num);     % največ 2 igralca
+
+        for i = 1:k
+            s = stats(order(i));
+
+            boxes   = [boxes;   s.BoundingBox];
+          
+        end
+    end
+
+    % narišemo označbe direktno v sliko (brez figure, brez ax)
+    if ~isempty(boxes)
+        % pravokotniki okoli igralcev
+        frame = insertShape(frame, 'Rectangle', boxes, ...
+                            'Color', 'red', 'LineWidth', 2);
+    end
+
+    % shranimo obdelan frame v novi video
+    new_video(:,:,:,f) = frame;
+end
+
+% zapišemo novi video na disk
+writer_object = VideoWriter('squash_tracking.avi');
+open(writer_object);
+writeVideo(writer_object, new_video);
+close(writer_object);
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | Naloga4_Vaja4.m ====
+
+==== BEGIN Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | Naloga5_Vaja4.m ====
+% NALOGA 5 – sledenje igralcev in razpoznavanje po barvi majice
+% % Mihaela Temelkova & Jakob Suhadolc
+
+% preberemo sliko ozadja in video
+bg = imread('background_squash.png');
+v  = VideoReader('squash.avi');
+
+v.CurrentTime = 0;
+frames     = read(v, [1 Inf]);      % vsi frame-i videa
+video_size = size(frames);
+
+% pripravimo nov video za rezultat
+new_video = zeros(video_size, 'uint8');
+
+threshold = 60;              % prag za sliko razlike
+
+% območje igrišča (brez publike)
+row_min = 50; row_max = 250;
+col_min = 50; col_max = 320;
+
+for f = 1:video_size(4)
+
+    % vzamemo f-ti frame
+    frame = frames(:,:,:,f);
+
+    % evklidska razdalja v RGB
+    diff  = double(frame) - double(bg);
+    diff  = sqrt(sum(diff.^2, 3));
+
+    % binarna slika: 1 = dovolj drugačno od ozadja
+    bw = diff > threshold;
+
+    % maska igrišča, da publika odpade
+    bw_filtered = false(size(bw));
+    bw_filtered(row_min:row_max, col_min:col_max) = ...
+        bw(row_min:row_max,  col_min:col_max);
+    bw = bw_filtered;
+
+    % morfološko čiščenje
+    bw = bwmorph(bw, 'open', 3);
+    bw = bwmorph(bw, 'close', 3);
+    bw = bwmorph(bw, 'clean');
+    bw = bwmorph(bw, 'majority');
+
+    % povezana področja
+    [labels, num] = bwlabel(bw);
+    stats = regionprops(labels, 'Area', 'Centroid', ...
+                                 'BoundingBox', 'PixelIdxList');
+
+    boxes       = [];   % pravokotniki okoli igralcev
+    centers     = [];   % težišča igralcev
+    labels_text = {};   % oznake igralcev (A\B)
+
+    if num >= 1
+        % sortiramo regije po velikosti in vzamemo največ 2
+        areas = [stats.Area];
+        [~, order] = sort(areas, 'descend');
+        k = min(2, num);          % največ 2 igralca
+
+        % RGB kanali trenutnega frame-a za razpoznavanje barve
+        R = double(frame(:,:,1));
+        G = double(frame(:,:,2));
+        B = double(frame(:,:,3));
+
+        red_dom_vec = zeros(k,1);   % rdečost vsake regije
+
+        for i = 1:k
+            s = stats(order(i));
+
+            % geometrija (detekcija)
+            boxes   = [boxes;   s.BoundingBox];
+            centers = [centers; s.Centroid];
+
+            % barva (razpoznavanje)
+            pix   = s.PixelIdxList;
+            meanR = mean(R(pix));
+            meanG = mean(G(pix));
+            meanB = mean(B(pix));
+
+            % rdečost: koliko je R večji od G in B
+            red_dom_vec(i) = meanR - max(meanG, meanB);
+        end
+
+        % klasifikacija: B - bolj rdeč, A - manj rdeč
+        labels_text = cell(k,1);
+        if k == 2
+            [~, idxRed]  = max(red_dom_vec);
+            idxWhite     = 3 - idxRed;   % ker sta samo 1 in 2
+
+            labels_text{idxRed}   = 'B';   % rdeč igralec
+            labels_text{idxWhite} = 'A';   % bel igralec
+            
+        elseif k == 1
+            if red_dom_vec(1) > 0
+                labels_text{1} = 'B';
+            else
+                labels_text{1} = 'A';
+            end
+        end
+    end
+
+   if ~isempty(boxes) && ~isempty(centers)
+    for i = 1:size(boxes,1)
+
+        if strcmp(labels_text{i}, 'B')      % rdeč igralec
+            rectColor = 'red';
+            textColor = 'red';             % tudi črka rdeča
+        else                                % bel igralec (A)
+            rectColor = 'white';
+            textColor = 'white';           % črka bela
+        end
+
+        % pravokotnik samo za tega igralca
+        frame = insertShape(frame, 'Rectangle', boxes(i,:), ...
+                            'Color', rectColor, 'LineWidth', 2);
+
+        % črka samo za tega igralca
+        frame = insertText(frame, centers(i,:), labels_text{i}, ...
+                           'BoxOpacity', 0, ...
+                           'TextColor', textColor, ...
+                           'FontSize', 16, 'AnchorPoint', 'Center');
+    end
+end
+
+    % shranimo obdelan frame v novi video
+    new_video(:,:,:,f) = frame;
+end
+
+% zapišemo novi video na disk
+writer_object = VideoWriter('squash_tracking_color.avi');
+open(writer_object);
+writeVideo(writer_object, new_video);
+close(writer_object);
+==== END Jakob Suhadolc & Mihaela Temelkova | Jakob Suhadolc_22778_assignsubmission_file + Mihaela Temelkova_22772_assignsubmission_file | Naloga5_Vaja4.m ====
+
+
+==== BEGIN Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | drawLines.m ====
+function [] = drawLines(image, HoughSpace, N, Operator)
+    k = -2:0.01:2;
+    n = -200:1:200;
+
+    maximum = zeros(N,2);
+    [rows, cols, ~] = size(image);
+
+    for p = 1:N % find top N lines
+        [max1, index] = max(HoughSpace);      % max of each column
+        [max2, columnId] = max(max1);         % global max
+        rowId = index(columnId);              % corresponding row
+        maximum(p,1) = k(rowId);
+        maximum(p,2) = n(columnId);
+        HoughSpace(rowId,columnId) = 0;      % remove this peak
+
+        % Draw the line
+        x_vals = 1:cols;
+        y_vals = round(k(rowId)*x_vals + n(columnId));
+
+        % Keep points inside image
+        valid = y_vals >= 1 & y_vals <= rows;
+
+        % Set line color (red)
+        for i = 1:length(x_vals)
+            if valid(i)
+                image(y_vals(i), x_vals(i), 1) = 255;
+                image(y_vals(i), x_vals(i), 2) = 0;
+                image(y_vals(i), x_vals(i), 3) = 0;
+            end
+        end
+    end
+
+    figure('Name', Operator);
+    imshow(image);
+end
+==== END Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | drawLines.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | hough_trans.m ====
+function akum=hough_trans(binarna_slika)
+    k=-2:0.01:2;
+    n=-200:1:200;
+    akum=zeros(401,401);
+    velikost_slike=size(binarna_slika);
+    for y=1:velikost_slike(1)
+        for x=1:velikost_slike(2)
+            if binarna_slika(y,x)==1
+                for x_hou=1:401
+                    for y_hou=1:401
+                        if n(y_hou)==round(y-x*k(x_hou))
+                            akum(x_hou,y_hou)=akum(x_hou,y_hou)+1;
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+==== END Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | hough_trans.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga1.m ====
+hotel=imread('hotel.jpg');
+hotel_siv=rgb2gray(hotel);
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];
+Sy = [1 2 1; 0 0 0; -1 -2 -1];   
+Gx=conv2(hotel_siv,Sx, 'same');
+Gy=conv2(hotel_siv,Sy, 'same'); %same za enake velikosti
+G=sqrt(Gx.^2+Gy.^2);
+
+G_max=max(G(:));
+G_norm=G/G_max;
+prag = graythresh(G_norm);   % Otsu metoda
+
+G_kon = G_norm > prag;
+
+Canny=edge(hotel_siv,'canny');
+figure;
+subplot(2,1,1);
+imshow(G_kon);
+title('Sobel');
+Canny=edge(hotel_siv,'canny');
+subplot(2,1,2);
+imshow(Canny);
+title('Canny');
+==== END Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga1.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga2.m ====
+hotel=imread('hotel.jpg');
+hotel_siv=rgb2gray(hotel);
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];
+Sy = [1 2 1; 0 0 0; -1 -2 -1];   
+Gx=conv2(hotel_siv,Sx, 'same');
+Gy=conv2(hotel_siv,Sy, 'same'); %same za enake velikosti
+G=sqrt(Gx.^2+Gy.^2);
+
+G_max=max(G(:));
+G_norm=G/G_max;
+prag = graythresh(G_norm);   % Otsu metoda
+
+G_kon = G_norm > prag;
+
+Canny=edge(hotel_siv,'canny');
+figure;
+subplot(2,1,1);
+imshow(G_kon);
+title('Sobel');
+Canny=edge(hotel_siv,'canny');
+subplot(2,1,2);
+imshow(Canny);
+title('Canny');
+
+akum_sobel = hough_trans(G_kon);
+akum_canny = hough_trans(Canny);
+
+figure;
+imshow(akum_sobel / max(akum_sobel(:))); title('Hough - Sobel');
+figure;
+imshow(akum_canny / max(akum_canny(:))); title('Hough - Canny');
+
+drawLines(hotel, akum_sobel, 5, 'sobel');
+drawLines(hotel, akum_canny, 5, 'canny');
+==== END Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga2.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga3.m ====
+video=VideoReader('squash.avi');
+frames=read(video,[1 Inf]);
+velikost_videa=size(frames);
+
+a=1;
+for t=1:20:velikost_videa(4)
+    za_ozadje(:,:,:,a)=frames(:,:,:,t);
+    a=a+1;
+end
+
+povprecje=mode(za_ozadje,4);
+imshow(povprecje(:,:,:))
+==== END Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga3.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga4.m ====
+video=VideoReader('squash.avi');
+frames=read(video,[1 Inf]);
+velikost_videa=size(frames);
+
+a=1;
+for b=1:20:velikost_videa(4)
+    za_ozadje(:,:,:,a)=frames(:,:,:,b);
+    a=a+1;
+end
+
+povprecje=mode(za_ozadje,4);
+
+for t=1:velikost_videa(4)
+    razlika=frames(:,:,:,t)-povprecje;
+    koncni_frame=frames(:,:,:,t);
+    imshow(razlika(:,:,1));
+    imagesc(razlika);
+    imshow(frames(:,:,:,t))
+    for i=1:velikost_videa(1)
+        for j=1:velikost_videa(2)
+            if razlika(i,j,1)<30
+                upragovljeno(i,j)=0;
+            else
+                upragovljeno(i,j)=1;
+            end
+        end
+    end
+    imshow(upragovljeno);
+    SE1=strel('rectangle',[3 3]);
+    morfoloske1=imopen(upragovljeno,SE1);
+    SE2=strel('rectangle',[5 5]);
+    morfoloske2=imdilate(morfoloske1,SE2);
+    imshow(morfoloske1);
+    imshow(morfoloske2);
+    
+    razdeljen=bwlabel(morfoloske2,4);
+    stevilo_podrocji=max(max(razdeljen));
+    
+    for pod=1:stevilo_podrocji
+        stevilo_clenov(pod)=sum(sum(razdeljen==pod));
+    end
+    index_najvecjega=find(stevilo_clenov==(max(stevilo_clenov)));
+    stevilo_clenov2=stevilo_clenov(stevilo_clenov~=(max(stevilo_clenov)));
+    index_drugega=find(stevilo_clenov==(max(stevilo_clenov2)));
+    
+    [x1,y1]=find(razdeljen==index_najvecjega(1));
+    [x2,y2]=find(razdeljen==index_drugega(1));
+    x1_sredisce=floor(min(x1)+(max(x1)-min(x1))/2);
+    y1_sredisce=floor(min(y1)+(max(y1)-min(y1))/2);
+    x2_sredisce=floor(min(x2)+(max(x2)-min(x2))/2);
+    y2_sredisce=floor(min(y2)+(max(y2)-min(y2))/2);
+    koncni_frame(x1_sredisce:x1_sredisce+1,y1_sredisce-2:y1_sredisce+2,1)=0;
+    koncni_frame(x1_sredisce:x1_sredisce+1,y1_sredisce-2:y1_sredisce+2,2)=255;
+    koncni_frame(x1_sredisce:x1_sredisce+1,y1_sredisce-2:y1_sredisce+2,3)=0;
+    koncni_frame(x1_sredisce-2:x1_sredisce+2,y1_sredisce:y1_sredisce+1,1)=0;
+    koncni_frame(x1_sredisce-2:x1_sredisce+2,y1_sredisce:y1_sredisce+1,2)=255;
+    koncni_frame(x1_sredisce-2:x1_sredisce+2,y1_sredisce:y1_sredisce+1,3)=0;
+    koncni_frame(x2_sredisce:x2_sredisce+1,y2_sredisce-2:y2_sredisce+2,1)=0;
+    koncni_frame(x2_sredisce:x2_sredisce+1,y2_sredisce-2:y2_sredisce+2,2)=255;
+    koncni_frame(x2_sredisce:x2_sredisce+1,y2_sredisce-2:y2_sredisce+2,3)=0;
+    koncni_frame(x2_sredisce-2:x2_sredisce+2,y2_sredisce:y2_sredisce+1,1)=0;
+    koncni_frame(x2_sredisce-2:x2_sredisce+2,y2_sredisce:y2_sredisce+1,2)=255;
+    koncni_frame(x2_sredisce-2:x2_sredisce+2,y2_sredisce:y2_sredisce+1,3)=0;
+    koncni_video(:,:,:,t)=koncni_frame;
+    
+end
+
+writerObj=VideoWriter('4_naloga.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(koncni_video,'uint8'));
+close(writerObj);
+==== END Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga4.m ====
+
+==== BEGIN Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga5.m ====
+video=VideoReader('squash.avi');
+frames=read(video,[1 Inf]);
+velikost_videa=size(frames);
+
+a=1;
+for b=1:20:velikost_videa(4)
+    za_ozadje(:,:,:,a)=frames(:,:,:,b);
+    a=a+1;
+end
+
+povprecje=mode(za_ozadje,4);
+
+%t=20;
+for t=1:velikost_videa(4)
+    razlika=frames(:,:,:,t)-povprecje;
+    koncni_frame=frames(:,:,:,t);
+    imshow(razlika(:,:,1));
+    imagesc(razlika);
+    imshow(frames(:,:,:,t))
+    for i=1:velikost_videa(1)
+        for j=1:velikost_videa(2)
+            if razlika(i,j,1)<30
+                upragovljeno(i,j)=0;
+            else
+                upragovljeno(i,j)=1;
+            end
+        end
+    end
+    imshow(upragovljeno);
+    SE1=strel('rectangle',[3 3]);
+    morfoloske1=imopen(upragovljeno,SE1);
+    SE2=strel('rectangle',[5 5]);
+    morfoloske2=imdilate(morfoloske1,SE2);
+    imshow(morfoloske1);
+    imshow(morfoloske2);
+    
+    razdeljen=bwlabel(morfoloske2,4);
+    stevilo_podrocji=max(max(razdeljen));
+    
+    for pod=1:stevilo_podrocji
+        stevilo_clenov(pod)=sum(sum(razdeljen==pod));
+    end
+    index_najvecjega=find(stevilo_clenov==(max(stevilo_clenov)));
+    stevilo_clenov2=stevilo_clenov(stevilo_clenov~=(max(stevilo_clenov)));
+    index_drugega=find(stevilo_clenov==(max(stevilo_clenov2)));
+    
+    [x1,y1]=find(razdeljen==index_najvecjega(1));
+    [x2,y2]=find(razdeljen==index_drugega(1));
+    x1_sredisce=floor(min(x1)+(max(x1)-min(x1))/2);
+    y1_sredisce=floor(min(y1)+(max(y1)-min(y1))/2);
+    x2_sredisce=floor(min(x2)+(max(x2)-min(x2))/2);
+    y2_sredisce=floor(min(y2)+(max(y2)-min(y2))/2);
+    
+    vzorec1=frames(x1_sredisce-2:x1_sredisce+2,y1_sredisce-2:y1_sredisce+2,:,t);
+    vzorec2=frames(x2_sredisce-2:x2_sredisce+2,y2_sredisce-2:y2_sredisce+2,:,t);
+    
+    povprecje_vzorec1=mean(vzorec1,[1 2]);
+    povprecje_vzorec2=mean(vzorec2,[1 2]);
+    
+    koncni_frame(x1_sredisce:x1_sredisce+1,y1_sredisce-2:y1_sredisce+2,1)=0;
+    koncni_frame(x1_sredisce:x1_sredisce+1,y1_sredisce-2:y1_sredisce+2,2)=255;
+    koncni_frame(x1_sredisce:x1_sredisce+1,y1_sredisce-2:y1_sredisce+2,3)=0;
+    koncni_frame(x1_sredisce-2:x1_sredisce+2,y1_sredisce:y1_sredisce+1,1)=0;
+    koncni_frame(x1_sredisce-2:x1_sredisce+2,y1_sredisce:y1_sredisce+1,2)=255;
+    koncni_frame(x1_sredisce-2:x1_sredisce+2,y1_sredisce:y1_sredisce+1,3)=0;
+    koncni_frame(x2_sredisce:x2_sredisce+1,y2_sredisce-2:y2_sredisce+2,1)=0;
+    koncni_frame(x2_sredisce:x2_sredisce+1,y2_sredisce-2:y2_sredisce+2,2)=255;
+    koncni_frame(x2_sredisce:x2_sredisce+1,y2_sredisce-2:y2_sredisce+2,3)=0;
+    koncni_frame(x2_sredisce-2:x2_sredisce+2,y2_sredisce:y2_sredisce+1,1)=0;
+    koncni_frame(x2_sredisce-2:x2_sredisce+2,y2_sredisce:y2_sredisce+1,2)=255;
+    koncni_frame(x2_sredisce-2:x2_sredisce+2,y2_sredisce:y2_sredisce+1,3)=0;
+    
+    if (povprecje_vzorec1(1)<160 && povprecje_vzorec2(1)>160)
+        koncni_frame_1=insertText(koncni_frame,[y1_sredisce x1_sredisce],['A']);
+        koncni_frame_crka=insertText(koncni_frame_1,[y2_sredisce x2_sredisce],['B']);
+    else
+        koncni_frame_1=insertText(koncni_frame,[y1_sredisce x1_sredisce],['B']);
+        koncni_frame_crka=insertText(koncni_frame_1,[y2_sredisce x2_sredisce],['A']);
+    end
+    
+    koncni_video(:,:,:,t)=koncni_frame_crka;
+    %imshow(koncni_frame_crka);
+    
+end
+
+writerObj=VideoWriter('5_naloga.avi');
+writerObj.FrameRate=25;
+open(writerObj);
+writeVideo(writerObj,cast(koncni_video,'uint8'));
+close(writerObj);
+==== END Lina Josifovska | Lina Josifovska_22771_assignsubmission_file | naloga5.m ====
+
+
+==== BEGIN Lovro Perme | Lovro Perme_22774_assignsubmission_file | CV_Vaja4.m ====
+%% ====== Naloga 1 =========================================
+close all;
+clear all;
+clc;
+
+hotel = imread('01-Input\hotel.jpg');
+hotel_g = double(rgb2gray(hotel));
+
+s_x = [1 0 -1; 2 0 -2; 1 0 -1];     %sobelov konvolucijski filter za x smer
+s_y = s_x';                         %sobelov konvolucijski filter za y smer
+
+g_x = imfilter(hotel_g, s_x);
+g_y = imfilter(hotel_g, s_y);
+g_sobel = sqrt(g_x.^2 + g_y.^2);
+f1 = figure;
+imshow(uint8(g_sobel));
+title('sobelova konvolucija - brez upragovaljanja');
+
+%upragovljanje
+g_sobel_t = g_sobel > 200;
+g_sobel_t = boolean(g_sobel_t);
+f2 = figure;
+subplot(1,2,1);
+imshow(g_sobel_t);
+title('sobelova konvolucija - upragovljena')
+
+g_canny = edge(hotel_g,"canny");
+subplot(1,2,2);
+imshow(g_canny);
+title('Cannyev detektor')
+
+%% ====== Naloga 2 =========================================
+clc;
+
+k_acc = -2:(4/400):2;
+n_acc = -200:(400/400):200;
+
+%sobel
+acc = hough_trans(g_sobel_t, k_acc, n_acc);
+f2_2 = figure;
+imshow(uint8(acc));
+title('akumulator houghove trans. za canny');
+n = 10;
+[acc_sorted, sorted_idx] = sort(acc(:),"descend");
+n_maxes = acc_sorted(1:n);
+n_maxes_idx = sorted_idx(1:n);
+
+[max_k_idx, max_n_idx] = ind2sub(size(acc), n_maxes_idx);
+
+f3 = figure;
+imshow(g_sobel_t);
+title('houghova transformacija na sobelovi sliki');
+hold on;
+
+for i = 1:length(max_k_idx)
+    fplot(@(x) k_acc(max_k_idx(i))*x + n_acc(max_n_idx(i)), [0, size(g_sobel_t,2)],'LineWidth',1.5);
+    ylim([0, size(g_sobel_t,1)]);
+end
+hold off;
+
+%canny
+acc = hough_trans(g_canny, k_acc, n_acc);
+f3_2 = figure;
+imshow(uint8(acc));
+title('akumulator houghove trans. za canny');
+n = 10;
+[acc_sorted, sorted_idx] = sort(acc(:),"descend");
+n_maxes = acc_sorted(1:n);
+n_maxes_idx = sorted_idx(1:n);
+
+[max_k_idx, max_n_idx] = ind2sub(size(acc), n_maxes_idx);
+
+f4 = figure;
+imshow(g_canny);
+title('houghova transformacija na cannyevi sliki');
+hold on;
+
+for i = 1:length(max_k_idx)
+    fplot(@(x) k_acc(max_k_idx(i))*x + n_acc(max_n_idx(i)), [0, size(g_canny,2)],'LineWidth',1.5);
+    ylim([0, size(g_canny,1)]);
+end
+hold off;
+
+function acc = hough_trans(bin_pic, k_vector, n_vector)
+    acc = zeros(length(k_vector), length(n_vector));
+    for i = 1 : size(bin_pic,2)
+        for j = 1 : size(bin_pic,1)
+            if bin_pic(j,i)
+                for k_idx = 1 : length(k_vector)
+                    n = -i * k_vector(k_idx) + j;
+                    n = round(n);
+                    if n >= -200 && n <= 200
+                        n_idx = (n + 200) * 400/400 + 1;
+                        acc(k_idx, n_idx) = acc(k_idx, n_idx) + 1;
+                    end
+                end
+            end
+        end
+    end
+end
+
+%% ====== Naloga 3,4,5 =========================================
+clc;
+
+
+squash_obj = VideoReader('01-Input\squash.avi');
+squash = read(squash_obj);
+
+squash_fps = squash(:,:,:,1:10:end);
+
+background = mode(squash_fps,4);
+f5 = figure;
+imshow(background);
+title('izločeno ozadje videa');
+hold on;
+[border_x, border_y] = ginput(2);   %da območja okrog igrišča ne bomo računali -> eliminiramo premikanje gledalcev
+border_x = round(border_x);
+border_y = round(border_y);
+plot([border_x(1), border_x(2), border_x(2), border_x(1), border_x(1)], [border_y(1), border_y(1), border_y(2), border_y(2), border_y(1)], '-r'); % izris pravokotnika
+
+diff = zeros(size(squash_fps,1), size(squash_fps,2), size(squash_fps,4));
+
+for i = 1 : size(squash, 4)
+    diff(border_y(1):border_y(2),border_x(1):border_x(2),i) = sqrt(sum((squash(border_y(1):border_y(2),border_x(1):border_x(2),:,i) - background(border_y(1):border_y(2),border_x(1):border_x(2),:)).^2, 3));
+end
+
+f6 = figure;
+imagesc(diff(:,:,1));
+colorbar;
+
+diff_t = diff > 15;
+
+diff_morph = zeros(size(diff_t));
+for i = 1 : size(squash, 4)
+    diff_morph(:,:,i) = bwmorph(diff_t(:,:,i),'erode',1); 
+    diff_morph(:,:,i) = bwmorph(diff_morph(:,:,i),'open',1);       
+    diff_morph(:,:,i) = bwmorph(diff_morph(:,:,i),'dilate',5);
+    diff_morph(:,:,i) = bwmorph(diff_morph(:,:,i),'close',1);
+end
+
+diff_morph = boolean(diff_morph);
+
+
+writer_object = VideoWriter('02-Output\squash_tracked.avi');
+writer_object.FrameRate = squash_obj.FrameRate;
+writer_object.Quality = 100;
+open(writer_object);
+
+
+diff_labeled = zeros(size(diff_morph));
+player1_centroid = zeros(2,size(squash, 4));
+player2_centroid = zeros(2,size(squash, 4));
+for i = 1 : size(squash, 4)
+    diff_labeled(:,:,i) = bwlabel(diff_morph(:,:,i));
+    region_data = regionprops(diff_labeled(:,:,i),'Centroid', 'Area');
+    
+    if size(region_data,1) >= 2
+        [~, idx] = maxk([region_data.Area], 2);
+        player1_centroid(:,i) = region_data(idx(1)).Centroid;
+        player2_centroid(:,i) = region_data(idx(2)).Centroid;
+    else
+        player1_centroid(:,i) = region_data(1).Centroid;
+        player2_centroid(:,i) = player1_centroid(:,i);
+    end
+    
+    centers = [
+    player1_centroid(:,i).'
+    player2_centroid(:,i).'
+    ];   
+    radii = [20; 20];
+    new_frame = insertShape(squash(:,:,:,i), 'circle',[centers radii], 'Color', 'red','LineWidth', 2);
+    
+
+    player1_centroid(:,i) = round(player1_centroid(:,i));
+    player2_centroid(:,i) = round(player2_centroid(:,i));
+    region1 = rgb2hsv(squash(player1_centroid(2,i)-10:player1_centroid(2,i)+10, player1_centroid(1,i)-10:player1_centroid(1,i)+10,:,i));
+    region2 = rgb2hsv(squash(player2_centroid(2,i)-10:player2_centroid(2,i)+10, player2_centroid(1,i)-10:player2_centroid(1,i)+10,:,i));
+    
+    meanHue1 = mean(region1(:, :, 1), 'all');
+    meanSaturation1 = mean(region1(:, :, 2), 'all');
+    meanValue1 = mean(region1(:, :, 3), 'all');
+
+    meanHue2 = mean(region2(:, :, 1), 'all');
+    meanSaturation2 = mean(region2(:, :, 2), 'all');
+    meanValue2 = mean(region2(:, :, 3), 'all');
+    
+    if meanSaturation1 > meanSaturation2
+        new_frame = insertText(new_frame(:,:,:), centers(1,:) + [0 -40; 0 -40],'RDEČ IGRALEC','TextColor', 'red', 'FontSize', 10, 'BoxOpacity', 0);
+        new_frame = insertText(new_frame(:,:,:), centers(2,:) + [0 -40; 0 -40],'BEL IGRALEC','TextColor', 'red', 'FontSize', 10, 'BoxOpacity', 0);
+    elseif meanSaturation2 > meanSaturation1
+        new_frame = insertText(new_frame(:,:,:), centers(2,:) + [0 -40; 0 -40],'RDEČ IGRALEC','TextColor', 'red', 'FontSize', 10, 'BoxOpacity', 0);
+        new_frame = insertText(new_frame(:,:,:), centers(1,:) + [0 -40; 0 -40],'BEL IGRALEC','TextColor', 'red', 'FontSize', 10, 'BoxOpacity', 0);
+    else
+        new_frame = insertText(new_frame(:,:,:), centers(1,:) + [0 -40; 0 -40],'NERAZLOČNO','TextColor', 'red', 'FontSize', 10, 'BoxOpacity', 0);
+        new_frame = insertText(new_frame(:,:,:), centers(2,:) + [0 -40; 0 -40],'NERAZLOČNO','TextColor', 'red', 'FontSize', 10, 'BoxOpacity', 0);
+    end  
+    writeVideo(writer_object, new_frame);
+end
+
+close(writer_object);
+
+
+
+
+==== END Lovro Perme | Lovro Perme_22774_assignsubmission_file | CV_Vaja4.m ====
+
+
+==== BEGIN Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | drawLines.m ====
+% Function: drawLines
+% Author: Marija Ivanovska
+% Description: This function draws N lines with maximum number of votes,
+% defined by Hough transformation.
+% Usage example:
+% hotelRGB=imread('hotel.jpg'); % input image
+% N = 5; % number of lines we want to draw
+% HoughSpace = HoughTransform(BinaryImage)
+% drawLines(hotelRGB,HoughSpace,N,'Sobel');
+function []=drawLines(image,HoughSpace,N,Operator)
+k=-2:0.01:2;
+n=-200:1:200;
+maximum=zeros(N,2);
+for p=1:N % (k,n)
+[max1,index]=max(HoughSpace);
+[max2,columnId]=max(max1);
+rowId=index(columnId);
+maximum(p,1)=k(rowId);
+maximum(p,2)=n(columnId);
+HoughSpace(rowId,columnId)=0;
+for i=1:481
+    j=round(k(rowId)*i+n(columnId));
+    for widthVar=1:size(j)
+        image(j,i,1)=255;
+        image(j,i,2)=0;
+        image(j,i,3)=0;
+    end
+end
+end
+figure('Name',Operator);imshow(image);
+==== END Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | drawLines.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja1.m ====
+% Branje sivinske slike
+img = imread('hotel.jpg');
+img = rgb2gray(img);
+
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];
+Sy = [1 2 1; 0 0 0; -1 -2 -1];
+
+img_d = double(img);
+
+% Sobel gradienti
+Gx = conv2(img_d, Sx, 'same');
+Gy = conv2(img_d, Sy, 'same');
+G = sqrt(Gx.^2 + Gy.^2);
+Gnorm = mat2gray(G); % normalizacija
+
+% prag
+T = 0.25;
+edges_sobel = Gnorm > T;
+
+% canny
+edges_canny = edge(img, 'canny');   
+
+% prikaz
+figure;
+
+subplot(1,2,1);
+imshow(edges_sobel);
+title('Sobelov detektor (prag = 0.25)');
+
+subplot(1,2,2);
+imshow(edges_canny);
+title('Cannyjev detektor (MATLAB edge)');
+
+==== END Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja1.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja2.m ====
+img = imread('hotel.jpg');
+gray = rgb2gray(img);
+
+%------------------ SOBEL ---------------------%
+Sx = [1 0 -1; 2 0 -2; 1 0 -1];
+Sy = [1 2 1; 0 0 0; -1 -2 -1];
+
+
+img_d = double(gray);
+Gx = conv2(img_d, Sx, 'same');
+Gy = conv2(img_d, Sy, 'same');
+G = sqrt(Gx.^2 + Gy.^2);
+Gnorm = mat2gray(G);
+
+T = 0.25; % threshold / prag
+edges_sobel = Gnorm > T; % robovi glede na threshold
+% odstranim robove 
+edges_sobel(1,:) = 0;
+edges_sobel(end,:) = 0;
+edges_sobel(:,1) = 0;
+edges_sobel(:,end) = 0;
+
+
+% canny
+edges_canny = edge(gray, 'canny');
+
+% houghova transformacija
+H_sobel = HoughTransform(edges_sobel);
+H_canny = HoughTransform(edges_canny);
+
+% izris k in n parametrov
+A_normirana = mat2gray(H_sobel);
+figure;
+imshow(A_normirana, []);
+colormap('gray');
+colorbar;
+xlabel('n');
+ylabel('k');
+%%
+%------------------ DRAW LINES ----------------%
+N = 5;
+
+drawLines(img, H_sobel, N, 'Sobel');
+drawLines(img, H_canny, N, 'Canny');
+
+
+function A = HoughTransform(edges)
+
+    [H, W] = size(edges);
+
+    % diskretizacija k in n parametrov
+    k_vals = -2:0.01:2;       
+    n_vals = -200:1:200;      % 401 values
+
+    num_k = length(k_vals);
+    num_n = length(n_vals);
+
+    %  priprava Houghovega prostora
+    A = zeros(num_k, num_n);
+    
+    [y_idxs, x_idxs] = find(edges);
+
+    % zanka čez vse robove
+    for idx = 1:length(x_idxs)
+        x = x_idxs(idx);
+        y = y_idxs(idx);
+
+        for ik = 1:num_k
+            k = k_vals(ik);
+
+            n = y - k*x;
+
+            if n < -200 || n > 200
+                continue;
+            end
+
+            % index for n = round((n - n_min) / step) + 1
+            in = round(n - (-200)) + 1;    % step = 1 → easy
+
+            A(ik, in) = A(ik, in) + 1;
+        end
+    end
+end
+==== END Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja2.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja3.m ====
+video = VideoReader('squash.avi');
+frames = read(video,[1, Inf]); 
+[height, width, c, num_frames] = size(frames);
+
+step = 40;
+frames_len = floor(num_frames / step);
+frames4D = zeros(height,width,c, frames_len);
+
+frame_counter = 0;
+for f = 1:step:num_frames
+    
+    frame_counter = frame_counter + 1;
+    frame = frames(:,:,:,f);
+    frames4D(:,:,:,frame_counter) = frame;
+
+end
+
+% mediana, ker je nelinearen robusten filter, ki odstrani objekte, ki 
+% ne zavzemajo istega piksla več kot polovico časa. Za vsak piksle pogledaš
+% njegovo vrednost na vseh frameih
+frames4D = frames4D(:,:,:,1:frame_counter);
+mode_double = mode(frames4D,4);
+modus = uint8(mode_double);
+
+% 5. Prikaz slike ozadja
+imshow(modus);
+title('Ocenjeno ozadje (mediana po času)');
+==== END Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja3.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja4.m ====
+%% ozadje iz 3. naloge
+video = VideoReader('squash.avi');
+frames = read(video,[1, Inf]); 
+[height, width, c, num_frames] = size(frames);
+
+step = 40;
+frames_len = floor(num_frames / step);
+frames4D = zeros(height,width,c, frames_len);
+
+frame_counter = 0;
+for f = 1:step:num_frames
+    
+    frame_counter = frame_counter + 1;
+    frame = frames(:,:,:,f);
+    frames4D(:,:,:,frame_counter) = frame;
+end
+
+frames4D = frames4D(:,:,:,1:frame_counter);
+mode_double = mode(frames4D,4);
+modus = uint8(mode_double);
+%%
+vse_slike_razlike = zeros(height,width,num_frames);
+for f = 1:num_frames
+    frame = frames(:,:,:,f);
+    razlika = double(frame) - double(modus);
+    slika_razlike = sqrt( razlika(:,:,1).^2 + ...
+                          razlika(:,:,2).^2 + ...
+                          razlika(:,:,3).^2 );
+
+    vse_slike_razlike(:,:,f) = slika_razlike;
+    
+end
+imagesc(vse_slike_razlike(:,:,1));
+colormap gray;
+colorbar;
+title('Razlika med sliko in ozadjem');
+%% dolocanje praga s histogramom
+%figure;
+%histogram(slika_razlike(:), 200);
+frame = frames(:,:,:,1);
+    razlika = double(frame) - double(modus);
+    slika_razlike = sqrt( razlika(:,:,1).^2 + ...
+                          razlika(:,:,2).^2 + ...
+                          razlika(:,:,3).^2 );
+
+    vse_slike_razlike(:,:,1) = slika_razlike;
+    prag = 30;
+    
+    binary = slika_razlike > prag;
+    binary = bwmorph(binary, 'clean');      % odstrani samotne piksele
+    binary = bwmorph(binary, 'close');      % zapolni luknje
+    binary = bwmorph(binary, 'majority');   % popravlja male artefakte
+
+
+
+figure;
+imagesc(binary);
+colormap gray;
+colorbar;
+title("Binarna slika (threshold)");
+%%
+writer = VideoWriter('oznaceni_igralci.avi');
+open(writer);
+for f = 1:num_frames
+    frame = frames(:,:,:,f);     % izvirni frame
+    
+    % izračun slike razlike
+    razlika = double(frame) - double(modus);
+    slika_razlike = sqrt( razlika(:,:,1).^2 + ...
+                          razlika(:,:,2).^2 + ...
+                          razlika(:,:,3).^2 );
+
+    prag = 30;
+    binary = slika_razlike > prag;
+
+    % morfološke operacije
+    binary = bwmorph(binary, 'clean');
+    binary = bwmorph(binary, 'close');
+    binary = bwmorph(binary, 'majority');
+
+    % najdi igralca (centroid + bounding box)
+    [c1, c2, bb1, bb2] = najdi_igralca(binary);
+
+    % izris
+    figure(1); clf;
+    imshow(frame);
+    hold on;
+
+    % težišča
+    plot(c1(1), c1(2), 'r+', 'LineWidth', 2, 'MarkerSize', 12);
+    plot(c2(1), c2(2), 'r+', 'LineWidth', 2, 'MarkerSize', 12);
+
+    % pravokotnika
+    rectangle('Position', bb1, 'EdgeColor', 'g', 'LineWidth', 2);
+    rectangle('Position', bb2, 'EdgeColor', 'g', 'LineWidth', 2);
+
+    hold off;
+    drawnow;
+
+    % zapis v video
+    F = getframe(gca);         % zajame sliko iz figure
+    writeVideo(writer, F);
+
+end
+
+close(writer);
+
+
+
+function [cent1, cent2, bb1, bb2] = najdi_igralca(binary_image)
+
+    [labeled, ~] = bwlabel(binary_image);
+    props = regionprops(labeled, 'Area', 'Centroid', 'BoundingBox');
+
+    % indeks dveh največjih komponent
+    [~, idx] = maxk([props.Area], 2);
+
+    p1 = props(idx(1));
+    p2 = props(idx(2));
+
+    % vrni težišča
+    cent1 = p1.Centroid;
+    cent2 = p2.Centroid;
+
+    % vrni bounding box-a
+    bb1 = p1.BoundingBox;
+    bb2 = p2.BoundingBox;
+end
+==== END Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja4.m ====
+
+==== BEGIN Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja5.m ====
+%% ozadje iz 3. naloge
+video = VideoReader('squash.avi');
+frames = read(video,[1, Inf]); 
+[height, width, c, num_frames] = size(frames);
+
+step = 40;
+frames_len = floor(num_frames / step);
+frames4D = zeros(height,width,c, frames_len);
+
+frame_counter = 0;
+for f = 1:step:num_frames
+    
+    frame_counter = frame_counter + 1;
+    frame = frames(:,:,:,f);
+    frames4D(:,:,:,frame_counter) = frame;
+end
+
+frames4D = frames4D(:,:,:,1:frame_counter);
+mode_double = mode(frames4D,4);
+modus = uint8(mode_double);
+
+%% meje
+P1_R_min = 110; P1_R_max = 170; 
+P1_G_min = 50; P1_G_max = 70; 
+P1_B_min = 60; P1_B_max = 110; 
+
+P2_R_min = 100; P2_R_max = 180; 
+P2_G_min = 170; P2_G_max = 190; 
+P2_B_min = 170; P2_B_max = 210; 
+%%
+video = VideoReader('squash.avi');
+frames = read(video,[1 Inf]);
+[H,W,~,num_frames] = size(frames);
+
+step = 40;
+cnt = 0;
+for f = 1:step:num_frames
+    cnt = cnt + 1;
+    frames4D(:,:,:,cnt) = frames(:,:,:,f);
+end
+modus = uint8(mode(frames4D,4));
+%%
+writer = VideoWriter('squash_vaja5_kombinirano.avi');
+open(writer);
+
+prag = 70;
+
+for f = 1:num_frames
+    frame = frames(:,:,:,f);
+
+    % slika razlike
+    razlika = double(frame) - double(modus);
+    slika_razlike = sqrt(razlika(:,:,1).^2 + ...
+                         razlika(:,:,2).^2 + ...
+                         razlika(:,:,3).^2);
+
+    binary = slika_razlike > prag;
+    binary = bwmorph(binary,'clean');
+    binary = bwmorph(binary,'close');
+    binary = bwmorph(binary,'majority');
+
+    [labeled, ~] = bwlabel(binary);
+    props = regionprops(labeled,'Area','Centroid','BoundingBox');
+
+    if numel(props) < 2
+        continue
+    end
+
+    [~, idx] = maxk([props.Area],2);
+    p1 = props(idx(1));
+    p2 = props(idx(2));
+    % doloci igralca
+    [type1, col1] = doloci_igralca(frame, p1.BoundingBox);
+    [type2, col2] = doloci_igralca(frame, p2.BoundingBox);
+
+    % izris
+    figure(1); clf; imshow(frame); hold on;
+
+    rectangle('Position',p1.BoundingBox,'EdgeColor',col1,'LineWidth',2);
+    plot(p1.Centroid(1),p1.Centroid(2),[col1 '+'],'LineWidth',2);
+    text(p1.Centroid(1),p1.Centroid(2)-20,type1,'Color',col1,...
+        'FontSize',12,'FontWeight','bold');
+
+    rectangle('Position',p2.BoundingBox,'EdgeColor',col2,'LineWidth',2);
+    plot(p2.Centroid(1),p2.Centroid(2),[col2 '+'],'LineWidth',2);
+    text(p2.Centroid(1),p2.Centroid(2)-20,type2,'Color',col2,...
+        'FontSize',12,'FontWeight','bold');
+
+    hold off;
+
+    F = getframe(gca);
+    writeVideo(writer,F);
+end
+
+close(writer);
+
+function [label, color] = doloci_igralca(frame, bb)
+
+    % pragovi
+    P1_R_min = 110; P1_R_max = 170;
+    P1_G_min = 50;  P1_G_max = 70;
+    P1_B_min = 60;  P1_B_max = 110;
+
+    bb = round(bb);
+
+    roi = frame(bb(2):bb(2)+bb(4)-1, ...
+                bb(1):bb(1)+bb(3)-1, :);
+
+    R = roi(:,:,1);
+    G = roi(:,:,2);
+    B = roi(:,:,3);
+
+    % maska rdečega znotraj ROI
+    red_mask = (R >= P1_R_min & R <= P1_R_max & ...
+                G >= P1_G_min & G <= P1_G_max & ...
+                B >= P1_B_min & B <= P1_B_max);
+
+    % delež rdečih pikslov
+    red_ratio = sum(red_mask(:)) / numel(red_mask);
+
+    % prag – dovolj že majhen delež
+    if red_ratio > 0.03
+        label = 'Rdeci igralec';
+        color = 'r';
+    else
+        label = 'Beli igralec';
+        color = 'b';
+    end
+end
+
+function [cent1, cent2, bb1, bb2] = najdi_igralca(binary_image)
+
+    [labeled, ~] = bwlabel(binary_image);
+    props = regionprops(labeled, 'Area', 'Centroid', 'BoundingBox');
+
+    % indeks dveh največjih komponent
+    [~, idx] = maxk([props.Area], 2);
+
+    p1 = props(idx(1));
+    p2 = props(idx(2));
+
+    % vrni težišča
+    cent1 = p1.Centroid;
+    cent2 = p2.Centroid;
+
+    % vrni bounding box-a
+    bb1 = p1.BoundingBox;
+    bb2 = p2.BoundingBox;
+end
+==== END Nejc Ropič | Nejc Ropič_22785_assignsubmission_file | vaja5.m ====
+
+
+==== BEGIN Rok Prezelj | Rok Prezelj_22779_assignsubmission_file | main.m ====
+%% Naloga 1
+hotelRGB = imread('hotel.jpg');
+hotelGray = double(rgb2gray(hotelRGB));
+
+% BW1 = edge(hotelGray,'sobel');
+% BW2 = edge(hotelGray,'canny');
+
+Sx = [+1 0 -1
+      +2 0 -2
+      +1 0 -1];
+
+Sy = [+1 +2 +1
+      +0 +0 +0
+      -1 -2 -1];
+
+hotelGrayEdgeX = imfilter(hotelGray, Sx);
+hotelGrayEdgeY = imfilter(hotelGray, Sy);
+
+hotelGrayEdgeXY = sqrt(hotelGrayEdgeX.^2 + hotelGrayEdgeY.^2);
+hotelGrayEdgeXY = uint8(255 * hotelGrayEdgeXY / max(max(hotelGrayEdgeXY)));
+
+figure; imshow(hotelGrayEdgeXY)
+
+thresHold = 112;
+hotelGrayEdgeXYThreshold = hotelGrayEdgeXY > thresHold;
+figure; imshow(hotelGrayEdgeXYThreshold)
+
+
+hotelEdgeCanny = edge(hotelGray, 'canny');
+figure; imshow(hotelEdgeCanny)
+
+figure;
+subplot(1, 2, 1)
+imshow(hotelGrayEdgeXYThreshold)
+subplot(1, 2, 2)
+imshow(hotelEdgeCanny)
+
+%% Naloga 2
+imgSize = size(hotelGray);
+xMin = 1;
+xMax = imgSize(2);
+
+yMin = 1;
+yMax = imgSize(1);
+
+
+parts = 400;
+
+naklonMin = -2;
+naklonMax = 2;
+naklonStep = (naklonMax - naklonMin) / parts;
+
+premikMin = -200;
+premikMax = 200;
+premikStep = (premikMax - premikMin) / parts;
+
+nakloni = naklonMin:naklonStep:naklonMax;
+premiki = premikMin:premikStep:premikMax;
+
+figure; hold on;
+akumulator = zeros([parts, parts]);
+x = linspace(xMin, xMax);
+
+kindex = 1;
+for k = nakloni
+    nindex = 1;
+    for n = premiki
+        count = 0;
+        countCanny = 0;
+        countSobel = 0;
+        for x = xMin:1:xMax
+            y = round(x*k + n);
+            if y < 1 || y > yMax
+                continue
+            end
+            count = count + hotelGrayEdgeXYThreshold(y, x);
+        end
+        akumulator(kindex, nindex) = count;
+        nindex = nindex + 1;
+    end
+    kindex = kindex + 1;
+end
+
+figure; imshow(uint8(akumulator))
+
+N = 10;
+
+[values, linearIdx] = maxk(akumulator(:), N);
+
+% Convert linear indices to row/column
+[rowIdx, colIdx] = ind2sub(size(akumulator), linearIdx);
+
+% Corresponding k and n values
+k_vals = nakloni(rowIdx);
+n_vals = premiki(colIdx);
+
+figure; hold on; imshow(hotelRGB)
+
+xValue = linspace(xMin, xMax);
+for i = 1:1:N
+    line(xValue, xValue * k_vals(i) + n_vals(i), linewidth = 2)
+end
+
+%% Naloga 3
+vidObj = VideoReader("squash.avi");
+
+step = 10;
+count = 1;
+idx = 1;
+
+frames = [];
+
+while hasFrame(vidObj)
+    frame = readFrame(vidObj);
+
+    if mod(count, step) == 0
+        frames(:,:,:,idx) = frame;
+        idx = idx + 1;
+    end
+
+    count = count + 1;
+end
+
+background = uint8(median(frames, 4));
+imshow(background)
+% rect = getrect
+rect = [25, 37, 345, 212];
+
+x = rect(1);
+y = rect(2);
+w = rect(3);
+h = rect(4);
+
+igrisce = background(y : y+h-1, x : x+w-1, :);
+imshow(igrisce)
+
+%% Naloga 5
+
+vidObj = VideoReader("squash.avi");
+writer = VideoWriter("squash_tracked_downscaled.avi");
+open(writer);
+
+intscale = 2;
+scale = 1/intscale;
+
+rect = [25, 37, 345, 212];
+x = round(rect(1)*scale);
+y = round(rect(2)*scale);
+w = round(rect(3)*scale);
+h = round(rect(4)*scale);
+
+realImageOffset = [x, y] * intscale;
+
+downscaledBG = imresize(background, scale);
+downscaledBG = downscaledBG(y:y+h-1, x:x+w-1, :);
+bg = double(downscaledBG);
+i = 1;
+tic;
+
+while hasFrame(vidObj)
+
+    frameOriginal = readFrame(vidObj);
+    frameSmall = imresize(frameOriginal, scale);
+    court = frameSmall(y:y+h-1, x:x+w-1, :);
+
+    courtD = double(court);
+
+    % Evklidska razdalja
+    D = sqrt( ...
+        (courtD(:,:,1) - bg(:,:,1)).^2 + ...
+        (courtD(:,:,2) - bg(:,:,2)).^2 + ...
+        (courtD(:,:,3) - bg(:,:,3)).^2 );
+    if i == 1
+        imagesc(double(D))
+    end
+
+    % binarizacija + morfologija
+    BW = D > 40;
+    BW = bwmorph(BW, 'open');
+    BW = bwmorph(BW, 'fill');
+
+    [L, num] = bwlabel(BW);
+    stats = regionprops(L, 'Area', 'Centroid', 'BoundingBox');
+
+    % izris na originalni sliki
+    imshow(frameOriginal); hold on;
+
+    if num > 0
+        areas = [stats.Area];
+        [~, idx] = sort(areas, 'descend');
+        maxPlayers = min(2, num);   % 0, 1 ali 2
+
+        for k = 1:maxPlayers
+            s = stats(idx(k));
+
+            % maska trenutnega območja
+            mask = (L == idx(k));
+            
+            courtHSV = rgb2hsv(uint8(court));
+
+            H = courtHSV(:,:,1);
+            S = courtHSV(:,:,2);
+            V = courtHSV(:,:,3);
+
+            meanH = mean(H(mask));
+            meanS = mean(S(mask));
+            
+            if meanS >= 0.40
+                playerName  = 'Red';
+                playerColor = 'r';
+            
+            elseif meanS < 0.40
+                playerName  = 'White';
+                playerColor = 'b';
+            
+            else
+                playerName  = 'Unknown';
+                playerColor = 'y';
+            end
+
+            % geometrija
+            center = s.Centroid * intscale + realImageOffset;
+            bbox = s.BoundingBox;
+            radius = max(bbox(3), bbox(4)) / 2 * intscale;
+
+            % izris
+            viscircles(center, radius, 'Color', playerColor, 'LineWidth', 2);
+            text(center(1), center(2)-10, playerName, ...
+                 'Color', playerColor, 'FontSize', 12, 'FontWeight', 'bold');
+        end
+    end
+
+    hold off;
+
+    % zapis videa
+    frameOut = getframe(gca);
+    writeVideo(writer, frameOut);
+
+    % ocena časa
+    elapsed = toc;
+    if i > 5 && mod(i,8) == 0
+        timeLeft = (vidObj.NumFrames - i) * elapsed / i;
+        fprintf('Remaining: %.1f s\n', timeLeft);
+    end
+
+    i = i + 1;
+end
+
+
+close(writer);
+disp("Video successfully written.");
+==== END Rok Prezelj | Rok Prezelj_22779_assignsubmission_file | main.m ====
+
+
+==== BEGIN Teodora Tanurkova | Teodora Tanurkova_22777_assignsubmission_file | Vaja4_1do2.m ====
+%% Naloga 1
+
+Img=imread('hotel.jpg');
+
+figure;
+imshow('hotel.jpg')
+title('hotel');
+
+sivaSLika = rgb2gray(Img);
+
+%Sobel
+
+Sx=[1 0 -1;
+    2 0 -2;
+    1 0 -1];
+
+Sy = [1 2 1;
+    0 0 0;
+    -1 -2 -1];
+
+Gx = conv2(sivaSLika, Sx, 'vali');
+Gy = conv2(sivaSLika, Sy, 'valid');
+G=sqrt(Gx.^2+Gy.^2);
+T = 0.35 * max(G(:));
+robSobel = G>T;
+
+figure;
+imshow(robSobel);
+title('Magnituda gradienta po Sobelu');
+
+%Canny
+robCanny=edge(sivaSLika,'canny');
+
+figure;
+subplot(1,2,1); imshow(robCanny); title('Canny');
+subplot(1,2,2); imshow(robSobel); title('Sobel');
+
+% Naloga 2
+
+n_interval = -200:1:200;
+k_interval = -2:0.01:2;
+N = length(n_interval);
+K = length(k_interval);
+
+for j=1:2
+    if j == 1
+       rob = robSobel;
+       metoda = 'Sobel';
+    else 
+       rob = robCanny;
+       metoda = 'Canny';
+    end
+
+    [y,x,~] = size(rob);
+    HoughT = zeros(K, N);
+
+    for yy = 1:y
+        for xx = 1:x
+            if rob(yy,xx)
+            for ik=1:K %indekse ik
+                k = k_interval(ik); %vrednosti k
+                n = yy-k*xx; %vrednosti n
+                if n >= -200 && n <= 200
+                   in = round(n-(-200))+1; %za celostevilske indekse in
+                   HoughT(ik,in) = HoughT(ik, in)+1; 
+                end
+            end
+            end
+        end
+    end
+
+    figure;
+    imagesc(n_interval, k_interval, HoughT);
+    colormap(gray);
+    xlabel('n');
+    ylabel('k'); 
+    title('Houghov prostor', metoda);
+    colorbar;
+
+    [maxvStolpec, indexN] = max(HoughT, [], 2); 
+
+    NPremic = 5;
+    [~, indexVrstic] = maxk(maxvStolpec, NPremic);
+
+    k_maximalni = k_interval(indexVrstic);            % izbrani nakloni
+    n_maximalni = n_interval(indexN(indexVrstic));      % pripadajoči preseki
+
+    figure; 
+    imshow(Img);
+    hold on;
+    xpremica=1:size(Img,2);
+
+    for i = 1:NPremic
+        ypremica=k_maximalni(i)*xpremica + n_maximalni(i);
+        plot(xpremica,ypremica ,'LineWidth', 1);
+    end
+
+    title(['Najbolj izrazite premice - ' metoda]);
+
+ end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+==== END Teodora Tanurkova | Teodora Tanurkova_22777_assignsubmission_file | Vaja4_1do2.m ====
+
+==== BEGIN Teodora Tanurkova | Teodora Tanurkova_22777_assignsubmission_file | Vaja4_3do5.m ====
+%% 3 naloga odstranjevanje igralci z mode-om
+video3=VideoReader('squash.avi');
+korak = 10;
+vsiOkviri3 = video3.NumFrames;
+StIzbraneOkvire = floor(vsiOkviri3/korak);
+
+okvir1 = read(video3,1);
+[vrstice, stolpci, ~] = size(okvir1);
+
+%4D matrika
+IzbraniOkviri3 = zeros(vrstice, stolpci, 3, StIzbraneOkvire,'uint8');
+
+stevec = 1;
+for i = 1:korak:vsiOkviri3
+    IzbraniOkviri3(:,:,:,stevec)=read(video3, i);
+    stevec = stevec+1;
+end
+
+ozadje = zeros(vrstice, stolpci,3,'uint8');
+
+for k = 1:3
+    matriko4D = IzbraniOkviri3(:,:,k,:);
+    ozadjeKanal = mode(matriko4D,4); %po casu naredi modus
+
+    ozadje(:,:,k) = uint8(ozadjeKanal);
+end
+
+figure;
+imshow(ozadje); 
+title('ozadje -mode');
+
+
+%% 4 naloga sledenje igralci
+
+video4=VideoReader('squash.avi');
+vsiOkviri4 = video4.NumFrames;
+
+okvir1 = read(video4,1);
+[vrstice, stolpci, ~] = size(okvir1);
+
+izhodniVideo4 = VideoWriter('squashRezultat4Naloga.avi');
+open(izhodniVideo4);
+
+maskaIgrisca = zeros(vrstice, stolpci);
+
+% meje igrišča 
+y1Igrisce = round(0.08 * vrstice);
+y2Igrisce = round(0.92 * vrstice);
+x1Igrisce = round(0.18 * stolpci);
+x2Igrisce = round(0.85 * stolpci);
+
+maskaIgrisca(y1Igrisce:y2Igrisce, x1Igrisce:x2Igrisce) = 1;
+
+figure('visible','off');          % ne odpira vsakič novih oken
+
+for j = 1:vsiOkviri4
+    
+    okvir = read(video4, j);
+
+    % evklidska razd med okvirjem in ozadjem
+    razlika =double(okvir) - double(ozadje);
+    evklidskaRazd = sqrt( sum( razlika.^2 , 3) ); % po RGB kanali
+
+    maxVrednost = max(evklidskaRazd(maskaIgrisca == 1));
+   
+    T =0.15*maxVrednost;
+
+    binSlikaEVKLID = evklidskaRazd > T; 
+    binSlikaEVKLID(maskaIgrisca == 0) = 0; %vse kar ni igrisca postane 0
+
+    % Morfoloski operaciji
+    binCista = bwmorph(binSlikaEVKLID,'clean');        % odstrani majhne objekte
+    binCista = bwmorph(binCista, 'open');     
+    binCista = bwmorph(binCista, 'close'); 
+
+    if j == 5
+        maxMASK = max(evklidskaRazd(maskaIgrisca == 1));
+        disp(['max v maski ' num2str(maxMASK)]);
+        figure; 
+        imagesc(evklidskaRazd);
+        colormap gray;
+        colorbar;
+        title('evklidska razdalja okvir - 5');
+
+        figure;
+        imshow(binSlikaEVKLID);
+        title('upragovljena slika okvir 5');
+       
+        figure;
+        imshow(binCista);
+        title('pocistena slika okvir 5');
+    end     
+
+    % oznacevanje igralcev
+    [L, stObjektov] = bwlabel(binCista, 8); %8 - pomeni da so povezani po elevi desni gor dol in tudi diagonalah
+    LastnostiObjektov = regionprops(L, 'Area', 'Centroid');
+
+    % če ni objektov, samo zapišemo originalni okvir
+    if stObjektov >= 1
+       % izberi največ 2 največji področji
+       [~, indexSort] = sort([LastnostiObjektov.Area], 'descend');
+       
+       idxIgralci = indexSort(1:min(2, stObjektov)); % vzame 2 najvecja 1:2, ce stObjektov = 1 potem vzami samo ta 1:1
+       % kopija slike
+       okvirRisani = okvir;
+
+       % nariši samo težišča
+       for i = 1:numel(idxIgralci)
+           c = LastnostiObjektov(idxIgralci(i)).Centroid;
+           okvirRisani = insertMarker(okvirRisani, c, 'o', 'Color','red','Size',12);
+       end
+    else
+    % če ni igralcev → uporabi original
+    okvirRisani = okvir;
+    end
+
+% shrani frame v video
+writeVideo(izhodniVideo4, okvirRisani);
+end
+
+close(izhodniVideo4);
+
+
+%% 5. naloga A=rdeci, B=beli
+video5 = VideoReader('squash.avi');
+vsiOkviri = video5.NumFrames;
+
+okvir1 = read(video5,1);
+[vrstice, stolpci, ~] = size(okvir1);
+
+izhodniVideo5 = VideoWriter('squashRezultat5Naloga.avi');
+open(izhodniVideo5);
+
+maskaIgrisca = zeros(vrstice, stolpci);
+
+y1Igrisce = round(0.08 * vrstice);
+y2Igrisce = round(0.92 * vrstice);
+x1Igrisce = round(0.18 * stolpci);
+x2Igrisce = round(0.85 * stolpci);
+
+maskaIgrisca(y1Igrisce:y2Igrisce, x1Igrisce:x2Igrisce) = 1;
+
+figure('visible','off');
+
+for j = 1:vsiOkviri
+
+    okvir = read(video5, j);
+
+    razlika = double(okvir) - double(ozadje);
+    evklidskaRazd = sqrt(sum(razlika.^2, 3));
+
+    maxVrednost = max(evklidskaRazd(maskaIgrisca == 1));
+    T = 0.15 * maxVrednost;
+
+    binSlika = evklidskaRazd > T;
+    binSlika(maskaIgrisca == 0) = 0;
+
+    binCista = bwmorph(binSlika,'clean');
+    binCista = bwmorph(binCista,'open');
+    binCista = bwmorph(binCista,'close');
+
+    [L1, stObjektov1] = bwlabel(binCista, 8);
+    LastnostiObjektov1 = regionprops(L1, 'Area', 'Centroid', 'PixelIdxList');
+
+    okvirRisani1 = okvir;   % privzeto original
+
+    if stObjektov1 >= 1
+
+        [~, indexSort] = sort([LastnostiObjektov1.Area], 'descend');
+        idxIgralci1 = indexSort(1:min(2, stObjektov1));
+
+        R = okvir(:,:,1);
+        G = okvir(:,:,2);
+        B = okvir(:,:,3);
+
+        if numel(idxIgralci1) == 2
+
+            idx1 = idxIgralci1(1);
+            idx2 = idxIgralci1(2);
+
+            pix1 = LastnostiObjektov1(idx1).PixelIdxList;
+            pix2 = LastnostiObjektov1(idx2).PixelIdxList;
+
+            meanR1 = mean(double(R(pix1)));
+            meanG1 = mean(double(G(pix1)));
+            meanB1 = mean(double(B(pix1)));
+
+            meanR2 = mean(double(R(pix2)));
+            meanG2 = mean(double(G(pix2)));
+            meanB2 = mean(double(B(pix2)));
+
+            redScore1 = meanR1 - (meanG1 + meanB1)/2;
+            redScore2 = meanR2 - (meanG2 + meanB2)/2;
+
+            whiteScore1 = (meanR1 + meanG1 + meanB1)/3 - (abs(meanR1-meanG1)+abs(meanR1-meanB1)+abs(meanG1-meanB1));
+            whiteScore2 = (meanR2 + meanG2 + meanB2)/3 - (abs(meanR2-meanG2)+abs(meanR2-meanB2)+abs(meanG2-meanB2));
+
+            if redScore1 >= redScore2
+                idxA = idx1; 
+                idxB = idx2;
+            else
+                idxA = idx2;
+                idxB = idx1;
+            end
+
+            if abs(redScore1 - redScore2) < 5
+                if whiteScore1 >= whiteScore2
+                    idxB = idx1; 
+                    idxA = idx2;
+                else
+                    idxB = idx2; 
+                    idxA = idx1;
+                end
+            end
+
+            if idxA == idxB
+                idxA = idx1;
+                idxB = idx2;
+            end
+
+           
+            cA = LastnostiObjektov1(idxA).Centroid;
+            okvirRisani1 = insertMarker(okvirRisani1, cA, 'o', 'Color','red','Size',12);
+            okvirRisani1 = insertText(okvirRisani1, cA+[10 0], 'A', 'TextColor','red', 'BoxOpacity',0);
+
+            cB = LastnostiObjektov1(idxB).Centroid;
+            okvirRisani1 = insertMarker(okvirRisani1, cB, 'o', 'Color','white','Size',12);
+            okvirRisani1 = insertText(okvirRisani1, cB+[10 0], 'B', 'TextColor','white', 'BoxOpacity',0);
+
+        else
+            
+            c = LastnostiObjektov1(idxIgralci1(1)).Centroid;
+            okvirRisani1 = insertMarker(okvirRisani1, c, 'o', 'Color','yellow','Size',12);
+            okvirRisani1 = insertText(okvirRisani1, c+[10 0], '?', 'TextColor','yellow', 'BoxOpacity',0);
+        end
+    end
+
+    writeVideo(izhodniVideo5, okvirRisani1);
+
+end
+
+close(izhodniVideo5);
+==== END Teodora Tanurkova | Teodora Tanurkova_22777_assignsubmission_file | Vaja4_3do5.m ====
+
+
+==== BEGIN Timotej Topčievski | Timotej Topčievski_22789_assignsubmission_file | vaja4.m ====
+% Vaja 4
+%% Naloga 1
+A = imread('hotel.jpg');
+Sivinska = rgb2gray(A);
+imshow(Sivinska);
+
+Sivinska = im2double(Sivinska);
+
+Sx = [1  0 -1; 
+      2  0 -2; 
+      1  0 -1;];
+
+Sy = [1  2  1; 
+      0  0  0; 
+     -1 -2 -1;];
+
+Gx = imfilter(Sivinska, Sx, 'replicate', 'conv');
+Gy = imfilter(Sivinska, Sy, 'replicate', 'conv');
+
+G = sqrt(Gx.^2 + Gy.^2);
+
+T = 1.00;
+BW_sobel = G > T;
+
+% imshow(BW_sobel)
+
+BW_canny = edge(Sivinska, 'canny');
+
+% Prikaz rezultatov
+figure('Name','Vaja 4 - Naloga 1 (Sobel vs Canny)');
+subplot(2,3,1); imshow(Sivinska); title('Sivinska slika');
+
+subplot(2,3,2); imshow(G,[]); title('Sobel: magnituda |G|');
+subplot(2,3,3); imshow(BW_sobel); title(sprintf('Sobel binarno (T = %.2f)', T));
+
+subplot(2,3,5); imshow(BW_canny); title('Canny binarno');
+
+% za primerjavo še overlay:
+subplot(2,3,6);
+imshow(Sivinska); hold on;
+[y1,x1] = find(BW_sobel);
+plot(x1,y1,'y.','MarkerSize',1);
+title('Sobel robovi čez sliko');
+
+figure('Name','Canny overlay');
+imshow(Sivinska); hold on;
+[y2,x2] = find(BW_canny);
+plot(x2,y2,'g.','MarkerSize',1);
+title('Canny robovi čez sliko');
+
+%% Naloga 2
+
+A = imread('hotel.jpg');
+
+I = rgb2gray(A);
+I = im2double(I);
+
+% Detekcija robov (Canny)
+BW = edge(I, 'canny');
+
+% 2) Parametri Hough prostora po navodilih
+kMin = -2;  kMax =  2;
+nMin = -200; nMax = 200;
+numParts = 400;      % 400 delov -> 401 točk
+
+Nlines = 5;         
+supK = 8;           % supresija okolice
+supN = 8;
+
+% Hough za obe binarni sliki
+[A1, kVals, nVals, lines1] = houghova_transformacija(BW_sobel, Nlines, kMin, kMax, nMin, nMax, numParts, supK, supN);
+[A2, ~,    ~,    lines2]  = houghova_transformacija(BW_canny, Nlines, kMin, kMax, nMin, nMax, numParts, supK, supN);
+
+% Prikaz akumulatorja + premic
+
+A3 = rot90(A1,1);
+A4 = rot90(A2,1);
+
+% Sobel akumulator
+figure('Name','Houghova transformacija - Sobel');
+subplot(1,2,1);
+imagesc(kVals, nVals, A3); axis xy;
+xlabel('k'); ylabel('n'); title('Akumulator A(k,n) - Sobel');
+axis square
+colormap(gray);
+colorbar;
+
+subplot(1,2,2);
+imshow(A); hold on; title('N premic - Sobel');
+draw_lines(lines1, size(A));
+
+% Canny akumulator
+figure('Name','Houghova transformacija - Canny');
+subplot(1,2,1);
+imagesc(nVals, kVals, A4); axis xy;
+xlabel('n'); ylabel('k'); title('Akumulator A(k,n) - Canny');
+axis square
+colormap(gray);
+colorbar;
+
+subplot(1,2,2);
+imshow(A); hold on; title('N premic - Canny');
+draw_lines(lines2, size(A));
+
+% Izpis najdenih premic
+
+disp('SOBEL: (k, n, votes)');
+for i = 1:numel(lines1)
+    fprintf('%2d) k = %+0.3f, n = %+0.1f, votes = %d\n', i, lines1(i).k, lines1(i).n, lines1(i).votes);
+end
+
+disp('CANNY: (k, n, votes)');
+for i = 1:numel(lines2)
+    fprintf('%2d) k = %+0.3f, n = %+0.1f, votes = %d\n', i, lines2(i).k, lines2(i).n, lines2(i).votes);
+end
+
+%% Naloga 3
+
+videoFile = 'squash.avi';
+v = VideoReader(videoFile);
+
+step = 10;        % 10 -> ~80 slik, 20 -> ~40 slik
+maxKeep = 80;     % za step=20 daj 40
+
+% prva slika za dimenzije
+firstFrame = readFrame(v);
+[H,W,C] = size(firstFrame);
+
+frames = zeros(H, W, C, maxKeep, 'uint8');
+frames(:,:,:,1) = firstFrame;
+
+keep = 1;
+idx  = 1;
+
+while hasFrame(v) && keep < maxKeep
+    fr = readFrame(v);
+    idx = idx + 1;
+
+    if mod(idx-1, step) == 0
+        keep = keep + 1;
+        frames(:,:,:,keep) = fr;
+    end
+end
+
+frames = frames(:,:,:,1:keep);
+
+% Ozadje z MODE
+bg = uint8(mode(frames, 4));
+
+figure;
+imshow(bg);
+title(sprintf('Ozadje (mode), step=%d, N=%d', step, keep));
+
+imwrite(bg, 'background.png');
+
+%% Naloga 4 in 5
+
+% Parametri 
+T = 55;         
+% Morfološke nastavitve
+nClose = 3;
+nOpen  = 2;
+
+% Prikaži primer
+v = VideoReader(videoFile);
+fr0 = readFrame(v);
+
+D0 = rgb_evklidska_razdalja(fr0, bg); 
+
+figure('Name','Slika razlike');
+imagesc(D0); axis image; colorbar;
+colormap gray;                  
+title('Slika razlike (RGB evklidska razdalja)');
+
+% Upragovljanje na sliki razlike
+BW0 = D0 > T;
+
+% Ničlanje robov
+w = 10;                          % 5..20
+BW0(1:w, :) = 0;                 % zgoraj
+BW0(end-w+1:end, :) = 0;         % spodaj
+BW0(:, 1:w) = 0;                 % levo
+BW0(:, end-w+1:end) = 0;         % desno
+
+% Morfološke operacije
+BWm0 = BW0;
+BWm0 = bwmorph(BWm0,'clean');
+BWm0 = bwmorph(BWm0,'majority', 2);
+BWm0 = bwmorph(BWm0,'open',  nOpen);
+BWm0 = bwmorph(BWm0,'close', nClose);
+BWm0 = bwmorph(BWm0,'fill');
+
+% Shrani posamezne slike
+D0_u8 = uint8(255 * mat2gray(D0));  % normalizacija v [0,255]
+imwrite(D0_u8, 'primer_razlika.png');
+
+imwrite(uint8(BW0)*255,  'primer_prag.png');
+imwrite(uint8(BWm0)*255, 'primer_morfologija2.png');
+
+% shrani 3-v-1
+fig2 = figure('Visible','off');
+subplot(1,3,1); imshow(D0,[]); title('Razlika D'); colormap gray;
+subplot(1,3,2); imshow(BW0);   title('Po pragu');
+subplot(1,3,3); imshow(BWm0);  title('Po morfologiji');
+exportgraphics(fig2, 'primer_vse_skupaj.png', 'Resolution', 200);
+close(fig2);
+
+% Nastavi writer za izhodni video
+v = VideoReader(videoFile);
+vw = VideoWriter('squash_track2.avi');
+vw.FrameRate = v.FrameRate;
+open(vw);
+
+% figure za risanje
+fig = figure('Visible','off');
+ax = axes(fig);
+
+% Naloga 5: referenčni barvni hist
+vRef = VideoReader(videoFile);
+refFrame = read(vRef, 20);    % 20. frame
+
+% ROI koordinate
+ROI_red   = refFrame(157:168, 110:116, :);
+ROI_white = refFrame(95:105,   80:89,  :);
+
+nH = 18;              % 12..24
+nS = 6;               % 4..8
+satThr = 0.20;        % 0.15..0.30
+valThr = 0.10;        % 0.05..0.20
+
+% Izračun histogramov
+hist_red   = computeHistogramHS(ROI_red,   nH, nS, satThr, valThr);
+hist_white = computeHistogramHS(ROI_white, nH, nS, satThr, valThr);
+
+% 2. video writer za nalogo 5
+vw5 = VideoWriter('squash_track_hist3.avi');
+vw5.FrameRate = v.FrameRate;
+open(vw5);
+
+% figure za nalogo 5
+fig5 = figure('Visible','off');
+ax5 = axes(fig5);
+
+while hasFrame(v)
+    fr = readFrame(v);
+    
+    take = [];
+    stats = [];
+
+    % slika razlike (RGB evklidska razdalja)
+    D = rgb_evklidska_razdalja(fr, bg);
+
+    % pragovanje -> binarna slika (igralca=1, ozadje=0)
+    BW = D > T;
+    
+    % Ničlanje robov
+    w = 15;                         % 5..20
+    BW(1:w, :) = 0;                 % zgoraj
+    BW(end-w+1:end, :) = 0;         % spodaj
+    BW(:, 1:w) = 0;                 % levo
+    BW(:, end-w+1:end) = 0;         % desno
+
+    % morfološke operacije za zmanjšanje šuma (bwmorph)
+    BW = bwmorph(BW,'clean');            % odstrani izolirane pike
+    BW = bwmorph(BW,'majority', 4);      % dodatno zgladi šum
+    BW = bwmorph(BW,'open',  nOpen);     % odstrani manjši šum
+    BW = bwmorph(BW,'close', nClose);    % poveže in zapre luknje
+    BW = bwmorph(BW,'fill');             % zapolni notranjost področij
+
+    % label + najdi 2 največji področji (igralca)
+    [L, num] = bwlabel(BW, 8);
+
+    boxes = []; cents = [];
+    if num > 0
+        stats = regionprops(L, 'Area', 'Centroid', 'BoundingBox', 'PixelIdxList');
+        areas = [stats.Area];
+        [~, order] = sort(areas, 'descend');
+        take = order(1:min(2,num));  % največ 2
+
+        boxes = vertcat(stats(take).BoundingBox);
+        cents = vertcat(stats(take).Centroid);
+    end
+
+    % Naloga 5: klasifikacija 2 regij po barvnem histogramu
+    ids = strings(size(boxes,1),1);   % "r" ali "w"
+    
+
+    for j = 1:numel(take)
+        pixIdx = stats(take(j)).PixelIdxList;
+    
+        % izloči RGB piksle regije (Nx3)
+        fr2 = reshape(fr, [], 3);
+        regRGB = fr2(pixIdx, :);
+
+        regRGB_1x3 = reshape(regRGB, [], 1, 3);
+
+        Hreg = computeHistogramHS(regRGB_1x3, nH, nS, satThr, valThr);
+
+        score_red   = histIntersection2D(Hreg, hist_red);
+        score_white = histIntersection2D(Hreg, hist_white);
+
+        if score_red > score_white
+            ids(j) = "r";   % rdeč igralec
+        else
+            ids(j) = "w";   % bel igralec
+        end
+    end
+
+    % izris čez original + zapis v video
+    imshow(fr, 'Parent', ax); hold(ax,'on');
+
+    for i = 1:size(boxes,1)
+        rectangle(ax, 'Position', boxes(i,:), 'EdgeColor','y', 'LineWidth', 2);
+    end
+
+    hold(ax,'off');
+    axis(ax,'image'); axis(ax,'off');
+
+    F = getframe(ax);
+    writeVideo(vw, F.cdata);
+
+    out5 = fr;
+
+    % nariši barvne okvirje + oznake
+    for i = 1:size(boxes,1)
+        if ids(i) == "r"
+            col = 'red';  label = 'B';
+        else
+            col = 'white'; label = 'A';
+        end
+    
+        out5 = insertShape(out5, 'Rectangle', boxes(i,:), 'Color', col, 'LineWidth', 3);
+        out5 = insertText(out5,[boxes(i,1) max(1,boxes(i,2)-25)],label,'TextColor',col,'BoxOpacity',0,'FontSize',18);
+    end
+    
+    writeVideo(vw5, out5);
+
+    cla(ax);
+end
+
+close(vw);
+close(fig);
+close(vw5);
+disp('Končano: squash_track.avi (naloga 4) in squash_track_hist.avi (naloga 5)');
+
+%% Funkcije
+
+function [A, kVals, nVals, lines] = houghova_transformacija(BW, Nlines, kMin, kMax, nMin, nMax, numParts, supK, supN)
+% Houghova transformacija za premice y = kx + n
+% A je velikosti 401x401 (n indeks po vrsticah, k indeks po stolpcih)
+
+    dk = (kMax - kMin)/numParts;
+    dn = (nMax - nMin)/numParts;
+
+    kVals = kMin:dk:kMax; % 401
+    nVals = nMin:dn:nMax; % 401
+
+    Nk = numel(kVals);
+    Nn = numel(nVals);
+
+    [y, x] = find(BW);         % robne točke (x=stolpec, y=vrstica)
+    x = double(x);
+    y = double(y);
+
+
+    A = zeros(Nn, Nk, 'uint16');
+
+    % Glasovanje: za vsak k izračunaj n = y - kx, potem akumuliraj
+    for ki = 1:Nk
+        nAll = y - kVals(ki)*x;                     % n za vse robne točke pri tem k
+
+        nIdx = round((nAll - nMin)/dn) + 1;         % mapiranje na indeks 1..Nn
+        valid = (nIdx >= 1) & (nIdx <= Nn);
+
+        % štetje glasov za n indekse
+        counts = accumarray(nIdx(valid), 1, [Nn, 1]);
+        A(:,ki) = uint16(counts);
+    end
+
+    % Poišči Nlines najmočnejših maksimumov
+    Awork = double(A);
+    lines = struct('k', {}, 'n', {}, 'votes', {}, 'kIdx', {}, 'nIdx', {});
+
+    for t = 1:Nlines
+        [maxVal, linIdx] = max(Awork(:));
+        if maxVal <= 0
+            break;
+        end
+
+        [nI, kI] = ind2sub(size(Awork), linIdx);
+
+        lines(t).k = kVals(kI);
+        lines(t).n = nVals(nI);
+        lines(t).votes = round(maxVal);
+        lines(t).kIdx = kI;
+        lines(t).nIdx = nI;
+
+        % supresija okolice
+        kLo = max(1, kI - supK);  kHi = min(Nk, kI + supK);
+        nLo = max(1, nI - supN);  nHi = min(Nn, nI + supN);
+        Awork(nLo:nHi, kLo:kHi) = 0;
+    end
+end
+
+function draw_lines(lines, imgSize)
+% Izriši y = kx + n čez sliko (od x=1 do x=W)
+    H = imgSize(1);
+    W = imgSize(2);
+
+    for i = 1:numel(lines)
+        k = lines(i).k;
+        n = lines(i).n;
+
+        x1 = 1;   y1 = k*x1 + n;
+        x2 = W;   y2 = k*x2 + n;
+
+        plot([x1 x2], [y1 y2], 'r', 'LineWidth', 1);
+
+    end
+end
+
+% pomožna funkcija: RGB evklidska razlika ---
+function D = rgb_evklidska_razdalja(frameRGB, bgRGB)
+    fr = double(frameRGB);
+    bg = double(bgRGB);
+    dR = fr(:,:,1) - bg(:,:,1);
+    dG = fr(:,:,2) - bg(:,:,2);
+    dB = fr(:,:,3) - bg(:,:,3);
+    D  = sqrt(dR.^2 + dG.^2 + dB.^2);
+end
+
+function H = computeHistogramHS(rgbData, nH, nS, satThr, valThr)
+% 2D histogram v HSV prostoru (H,S).
+% Vrne nH x nS, normalizirano.
+
+    rgbData = im2double(rgbData);
+    hsv = rgb2hsv(rgbData);
+
+    Hh = hsv(:,:,1);    % [0,1)
+    Ss = hsv(:,:,2);    % [0,1]
+    Vv = hsv(:,:,3);    % [0,1]
+
+    mask = (Ss > satThr) & (Vv > valThr);  % izloči “bele/sive” in temne piksle
+
+    h = Hh(mask);
+    s = Ss(mask);
+
+    if isempty(h)
+        H = zeros(nH, nS);
+        return;
+    end
+
+    hBin = floor(h * nH) + 1;
+    sBin = floor(s * nS) + 1;
+
+    hBin = min(max(hBin, 1), nH);
+    sBin = min(max(sBin, 1), nS);
+
+    H = accumarray([hBin, sBin], 1, [nH, nS], @sum, 0);
+
+    H = H / max(1, sum(H(:)));
+end
+
+function score = histIntersection2D(H1, H2)
+% intersection score (vecji = bolj podobno)
+    score = sum(min(H1, H2), 'all');
+end
+
+
+==== END Timotej Topčievski | Timotej Topčievski_22789_assignsubmission_file | vaja4.m ====
+
+
+==== BEGIN Tina Gutnik | Tina Gutnik_22794_assignsubmission_file | lab_vaja_4.m ====
+% 1. Naloga
+
+S_x = [1 0 -1; 2 0 -2; 1 0 -1];
+S_y = [1 2 1; 0 0 0; -1 -2 -1];
+
+I = imread('hotel.jpg');
+I = rgb2gray(I);
+image(I); colormap gray;
+
+G_x = conv2(S_x, I);
+G_y = conv2(S_y, I);
+G = sqrt(G_x.^2 + G_y.^2);
+
+prag = 400;
+robovi = G > prag;        % ker je to logična slika z vrednostmi 0 in 1, pride s colormap gray 0 = črna in 1 = zelo temno siva, 
+                          % zato potrebujemo drugačen colormap (črna in bela)
+                          % v colormap(gray(2)) 0 = črno, 1 = belo
+C = edge(I, 'canny');
+
+
+figure;
+
+subplot(1,2,1);
+image(robovi); colormap(gray(2)); axis image off; title('Sobel z upragovljanjem');
+
+subplot(1,2,2);
+image(C); colormap(gray(2)); axis image off; title('Canny');
+
+% 2. Naloga
+
+k_min = -2; k_max =  2;
+n_min = -200; n_max =  200;
+
+k_vrednosti = linspace(k_min, k_max, 401);  % imamo 400 delov, ampak +1, ker so deli določeni s točkami na robu
+n_vrednosti = linspace(n_min, n_max, 401);  % s tema dvema vrsticama razdelimo k in n na točke
+
+dk = k_vrednosti(2) - k_vrednosti(1);
+dn = n_vrednosti(2) - n_vrednosti(1);                 % definiramo korak med točkama
+
+H = zeros(length(k_vrednosti),length(n_vrednosti));   % definiramo prazno akumulatorsko matriko 401x401: toliko vrstic, kot je vrednosti k (različnih naklonov) in toliko stolpcev, kot je vrednosti n (različnih odsekov)
+                                                      % vsaka celica H(i,j) predstavlja konkretno premico y = k_i * x + n_j
+                                                      % vrednost te celice H(i,j) pove, koliko robnih pikslov v sliki verjame, da ležijo na tej premici, 
+                                                      % torej akumulator je števec glasov za vsako možno celico
+
+[vrstice, stolpci] = find(C);      % funckija find najde neničelne elemente, vrne v katerih vrsticah in stolpcih so - najde torej vse robne piksle
+st_tock = length(vrstice);         % pove koliko robnih pikslov je
+
+for t = 1:st_tock                      % po vseh robnih pikslih
+    x = stolpci(t);                    % stolpec je x koordinata piksla
+    y = vrstice(t);                    % vrstica je y koordinata piksla
+    
+    for i_k = 1:length(k_vrednosti)    % po vseh možnih k vrednostih
+        k = k_vrednosti(i_k);          % določimo k
+        n = y - k * x;                 % določimo n iz enačbe premice
+
+        if n < n_min || n > n_max
+            continue;
+        end
+
+        j_n = round((n - n_min)/dn) + 1;   % pretvorimo n v indeks j po n_vrednosti
+
+        H(i_k, j_n) = H(i_k, j_n) + 1;     % povečamo števec glasov
+    end
+end
+
+N = 5;                    % zdaj iščemo N največjih elementov
+
+H_stolp_vektor = H(:);    % matriko spremenimo v stolpični vektor, ki vsak stolpec posebej doda na konec stolp. vektorja (matriko zravnamo v seznam)
+
+[H_vrednosti, indeksi] = sort(H_stolp_vektor, 'descend');  % elemente razvrstimo v padajočem vrstnem redu
+                                                           % prvi izhod so razvrščene H vrednosti, drugi izhod pa indeksi teh vrednosti, kat mi potrebujemo
+N_indeksi = indeksi(1:N);  % dobimo indekse največjih N elementov
+
+[k_indeksi, n_indeksi] = ind2sub(size(H), N_indeksi);
+
+k_N = k_vrednosti(k_indeksi);
+n_N = n_vrednosti(n_indeksi);        % to dvoje sta vektorja dolžine N
+
+
+% izris premic
+figure;
+H = imread('hotel.jpg');
+image(H); hold on;
+
+[visina, sirina] = size(C);
+
+x = 1:sirina;
+
+for i = 1:N
+
+    k = k_N(i);
+    n = n_N(i);
+    y = k * x + n;
+    plot(x,y,'LineWidth',2);
+end
+
+%% 3. naloga
+
+video = VideoReader('squash.avi');
+
+korak = 10;
+vsi_okvirji = 1:korak:video.NumFrames;
+N = length(vsi_okvirji);              % št. slik, ki jih uporabimo
+
+prvi_frame = read(video, vsi_okvirji(1));
+[H, W, C] = size(prvi_frame);         % height, width, colour (C = 3)
+
+matrika = zeros(H, W, C, N, 'uint8'); % pripravimo 4D matriko
+
+for i = 1:N
+    f = read(video, vsi_okvirji(i));   % preberemo i-ti frame
+    matrika(:,:,:,i) = f;              % ga damo v matriko
+end
+
+ozadje = median(matrika, 4);           % funkcija median po 4. dimenziji, torej po času - po frame-ih
+
+figure;
+image(ozadje);
+title('Slika ozadja');
+
+
+% 4. naloga
+
+ozadje = im2double(ozadje);  % slika iz prejšnje naloge
+
+novi_video = VideoWriter('squash_igralci.avi');
+novi_video.FrameRate = video.FrameRate;
+open(novi_video)
+
+prag = 0.2;
+
+for i = 1:video.NumFrames
+
+    frame = read(video, i);         % v uint8
+    frame_d = im2double(frame);       % v double
+
+    razlika = frame_d - ozadje;   % razlika v RGB
+
+    D = sqrt(razlika(:,:,1).^2 + razlika(:,:,2).^2 + razlika(:,:,3).^2);  % evklidska razdalja = koren(dR^2+dG^2+dB^2)
+
+    slika = D > prag;  % upragovljanje: igralec = 1, ozadje = 0
+
+    slika2 = bwmorph(slika, 'clean');       % odstrani osamljene pikice
+    slika2 = bwmorph(slika2, 'open');       % odstrani majhne objekte
+    slika2 = bwmorph(slika2, 'fill');       % zapolni luknje znotraj objektov
+    slika2 = bwmorph(slika2, 'majority');   % večina v okolici
+    
+    [L, st_objektov] = bwlabel(slika2);
+    lastnosti = regionprops(L, 'Area', 'Centroid', 'BoundingBox');  % površina, težišče, pravokotnik
+
+     if st_objektov > 0
+        povrsine = [lastnosti.Area];
+        [~, indeks] = sort(povrsine, 'descend');
+        kolicina = min(2, st_objektov);   % največ 2 objekta
+
+        for k = 1:kolicina
+            s = lastnosti(indeks(k));
+            frame = insertShape(frame, 'Rectangle', s.BoundingBox);
+            frame = insertMarker(frame, s.Centroid);
+        end
+     end
+
+    writeVideo(novi_video, frame);
+end
+
+close(novi_video);
+
+figure;
+imagesc(D);        % prikaže D z avtomatskim raztegovanjem dinamičnega obsega
+colormap gray;     % sivinski prikaz
+colorbar;          % barvna lestvica
+title('Slika evklidskih razdalj');
+
+figure;
+imagesc(slika);      % tukaj morda raje NE colormap gray, da bolje vidiš
+colormap(gray(2));  % črno-belo
+title('Binarna slika (igralca ≈ 1, ozadje ≈ 0)');
+
+
+figure;
+imagesc(slika2);
+colormap(gray(2));
+title('Binarna slika po morfoloških operacijah');
+
+% 5. naloga
+% ko se pojavi figure 6, je potrebnih nekaj klikov na rdečo majico nato enter, potem pa še nekaj klikov na belo majico in enter, da zajamemo piksle
+
+poljuben_frame = read(video, 50);
+figure; imshow(poljuben_frame);
+rdeci = impixel;   % Nx3 matrika [R G B] v uint8   
+
+figure; imshow(poljuben_frame);
+beli = impixel;
+
+rdeci = rdeci/255;
+beli = beli/255;
+
+povp_rdeci = mean(rdeci, 1);
+povp_beli = mean(beli, 1);
+
+
+novi_video_barva = VideoWriter('squash_igralci_barva.avi');
+novi_video_barva.FrameRate = video.FrameRate;
+open(novi_video_barva);
+
+prag = 0.2;
+
+for i = 1:video.NumFrames
+
+    frame = read(video, i);         % v uint8
+    frame_d = im2double(frame);       % v double
+
+    razlika = frame_d - ozadje;   % razlika v RGB
+
+    D = sqrt(razlika(:,:,1).^2 + razlika(:,:,2).^2 + razlika(:,:,3).^2);  % evklidska razdalja = koren(dR^2+dG^2+dB^2)
+
+    slika = D > prag;  % upragovljanje: igralec = 1, ozadje = 0
+
+    slika2 = bwmorph(slika, 'clean');       % odstrani osamljene pikice
+    slika2 = bwmorph(slika2, 'open');       % odstrani majhne objekte
+    slika2 = bwmorph(slika2, 'fill');       % zapolni luknje znotraj objektov
+    slika2 = bwmorph(slika2, 'majority');   % večina v okolici
+    
+    [L, st_objektov] = bwlabel(slika2);
+    lastnosti = regionprops(L, 'Area', 'Centroid', 'BoundingBox');  % površina, težišče, pravokotnik
+
+     if st_objektov > 0
+        povrsine = [lastnosti.Area];
+        [~, indeks] = sort(povrsine, 'descend');
+        kolicina = min(2, st_objektov);   % največ 2 objekta
+
+        R = frame(:,:,1);   % pripravimo kanale
+        G = frame_d(:,:,2);
+        B = frame_d(:,:,3);
+        meanR = zeros(1,kolicina);
+        meanG = zeros(1, kolicina);
+        meanB = zeros(1, kolicina);
+
+        for k = 1:kolicina
+            s = lastnosti(indeks(k));
+            komponenta_L = indeks(k);
+
+            maska = (L == komponenta_L);  % maska trenutnega igralca
+            meanR(k) = mean(R(maska));
+            meanG(k) = mean(G(maska));
+            meanB(k) = mean(B(maska));
+            rdeca_barva = meanR - max(meanG, meanB);
+
+            [~, idx_rdec] = max(rdeca_barva); 
+
+            if k ==  idx_rdec
+                oznaka = 'rdeci';         
+            else 
+                oznaka = 'beli';    
+            end
+
+            frame = insertShape(frame, 'Rectangle', s.BoundingBox);
+            frame = insertMarker(frame, s.Centroid);
+            
+            pozicija_teksta = [s.Centroid(1)+10, s.Centroid(2)-10];
+            frame = insertText(frame, pozicija_teksta, oznaka);
+
+            end
+    end
+
+    writeVideo(novi_video_barva, frame);
+end
+
+close(novi_video_barva);
+==== END Tina Gutnik | Tina Gutnik_22794_assignsubmission_file | lab_vaja_4.m ====
+
