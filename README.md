@@ -4,7 +4,7 @@
 
 It is designed for Moodle/Canvas-style exports where:
 
-- You start with one ZIP (the *master ZIP*).
+- You start with one or more ZIPs (the *master ZIP inputs*).
 - Inside it there is typically **one folder per student**, e.g. `Name Surname_16712_assignsubmission_file/`.
 - Inside each student folder there is usually either:
   - one or more nested submission ZIP files, or
@@ -55,7 +55,9 @@ If a submission contains no readable `.txt` / `.m` / `.py` files, a placeholder 
 
 ### 1) Extract master ZIP
 
-The script creates a temporary working directory under `/tmp` and safely extracts the master ZIP there.
+The script creates a temporary working directory under `/tmp` and safely extracts each provided master ZIP there.
+
+If multiple ZIPs are provided, they are merged in argument order and **later ZIPs win** for duplicate students (same inferred student name from folder prefix before the first underscore).
 
 ### 2) Discover submissions per student
 
@@ -88,14 +90,14 @@ When generating the final output, delimiter lines are augmented with student + s
 
 ```bash
 python preprocess-labs.py \
-  --input-file <MASTER.zip> \
+  --input-file <MASTER1.zip> [<MASTER2.zip> ...] \
   (--output-file <OUTPUT.txt> | --output-directory <OUTPUT_DIR>) \
   [--similarity-check]
 ```
 
 ### Arguments
 
-- `-i, --input-file` (**required**): path to the master ZIP file.
+- `-i, --input-file` (**required**): one or more paths to master ZIP files. When multiple ZIPs are provided, later ZIPs replace earlier submissions for duplicate students.
 - `-o, --output-file`: write one combined output file.
 - `-d, --output-directory`: write one output file per student.
 - `--similarity-check`: before writing a single output file, compare submissions and merge near-identical ones into one entry that lists all matched student names.
@@ -118,7 +120,15 @@ python preprocess-labs.py \
   --output-file data/2025/CV/outputs/vaja5.txt
 ```
 
-### Example B: one output file per student
+### Example B: merge two exports, where the second overrides duplicates
+
+```bash
+python preprocess-labs.py \
+  --input-file data/2025/CV/Vaja4.zip data/2025/CV/Vaja5.zip \
+  --output-file data/2025/CV/outputs/merged_vaja.txt
+```
+
+### Example C: one output file per student
 
 ```bash
 python preprocess-labs.py \
@@ -126,7 +136,7 @@ python preprocess-labs.py \
   --output-directory data/2025/CV/outputs/vaja5
 ```
 
-### Example C: combined output with similarity grouping
+### Example D: combined output with similarity grouping
 
 ```bash
 python preprocess-labs.py \

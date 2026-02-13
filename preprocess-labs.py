@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """preprocesslabs.py
 
-Unpacks a "Moodle-style" master ZIP that contains one folder per student, where each folder
-contains (one or more) submission ZIP files or submission subfolders.
+Unpacks one or more "Moodle-style" master ZIPs that contain one folder per student,
+where each folder contains (one or more) submission ZIP files or submission subfolders.
 
-For every submission ZIP or submission folder found inside the master ZIP:
+If multiple master ZIPs are provided, they are merged in argument order and later ZIPs
+replace earlier submissions for duplicate students.
+
+For every submission ZIP or submission folder found inside the merged input:
   1) Extract it into a temporary directory under /tmp (ZIPs only).
   2) Collect readable source files with suffix: .txt, .m, .py (case-insensitive).
   3) Concatenate the collected files into a per-submission text file with clear BEGIN/END
@@ -15,7 +18,7 @@ output, each BEGIN/END delimiter line is augmented with the student's name (infe
 folder names like "Name Surname_12345_assignsubmission_file") and the submission name.
 
 Example:
-  python preprocesslabs.py --input-file submissions.zip --output-file all_submissions.txt
+  python preprocesslabs.py --input-file submissions_A.zip submissions_B.zip --output-file all_submissions.txt
 
 Run with --help for full instructions.
 """
@@ -25,6 +28,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import sys
 import tempfile
 import textwrap
@@ -32,7 +36,7 @@ import zipfile
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 
 READABLE_SUFFIXES = {".txt", ".m", ".py"}
@@ -118,6 +122,41 @@ def infer_student_label(zip_path: Path, outer_root: Path) -> Tuple[str, str]:
     label = student_folder.split("_", 1)[0].strip() or student_folder.strip() or "UNKNOWN"
 
     return label, student_folder
+
+
+def infer_student_label_from_folder(folder_name: str) -> str:
+    """Infer student label from a Moodle-style folder name."""
+    return folder_name.split("_", 1)[0].strip() or folder_name.strip() or "UNKNOWN"
+
+
+def merge_master_inputs(input_zips: Sequence[Path], merged_root: Path) -> None:
+    """Extract and merge master ZIP inputs into merged_root.
+
+    Later ZIPs replace earlier submissions for the same inferred student label.
+    """
+    merged_root.mkdir(parents=True, exist_ok=True)
+    students_by_label: Dict[str, Path] = {}
+
+    for idx, input_zip in enumerate(input_zips, start=1):
+        source_root = merged_root.parent / f"outer_extracted_{idx}"
+        source_root.mkdir(parents=True, exist_ok=True)
+
+        eprint(f"[preprocesslabs] Extracting master ZIP #{idx} -> {source_root}")
+        safe_extract_zip(input_zip, source_root)
+
+        for student_path in sorted((p for p in source_root.iterdir() if p.is_dir()), key=lambda p: p.as_posix().casefold()):
+            label = infer_student_label_from_folder(student_path.name).casefold()
+
+            existing = students_by_label.get(label)
+            if existing is not None and existing.exists():
+                shutil.rmtree(existing)
+
+            target = merged_root / student_path.name
+            if target.exists():
+                shutil.rmtree(target)
+
+            shutil.copytree(student_path, target)
+            students_by_label[label] = target
 
 
 def iter_nested_zips(root_dir: Path) -> Iterable[Path]:
@@ -373,11 +412,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     """Create an ArgumentParser with detailed help text."""
     description = textwrap.dedent(
         """\
-        Preprocess a master ZIP that contains per-student folders with submission ZIPs
-        or submission subfolders.
+        Preprocess one or more master ZIPs that contain per-student folders with
+        submission ZIPs or submission subfolders.
 
         What it does (high level):
-          1) Extracts the master ZIP to a temporary directory under /tmp.
+          1) Extracts all provided master ZIPs to temporary directories under /tmp.
+             Later ZIPs replace earlier submissions for duplicate students.
           2) Finds every nested .zip (recursively) inside the extracted contents.
              If a student folder has no nested ZIPs, uses subfolders as submission sources.
           3) For each submission source (ZIP or folder):
@@ -411,8 +451,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--input-file",
         "-i",
+        nargs="+",
         required=True,
-        help="Path to the master ZIP file (the starting point).",
+        help=(
+            "Path(s) to one or more master ZIP files. If multiple ZIPs are provided, "
+            "later ZIPs replace earlier submissions for duplicate students."
+        ),
     )
 
     output_group = parser.add_mutually_exclusive_group(required=True)
@@ -456,17 +500,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     args = parse_args(argv)
 
-    input_zip = Path(args.input_file).expanduser().resolve()
+    input_zips = [Path(raw).expanduser().resolve() for raw in args.input_file]
     output_file = Path(args.output_file).expanduser().resolve() if args.output_file else None
     output_directory = Path(args.output_directory).expanduser().resolve() if args.output_directory else None
 
-    if not input_zip.exists():
-        eprint(f"ERROR: input file does not exist: {input_zip}")
-        return 2
+    for input_zip in input_zips:
+        if not input_zip.exists():
+            eprint(f"ERROR: input file does not exist: {input_zip}")
+            return 2
 
-    if not zipfile.is_zipfile(input_zip):
-        eprint(f"ERROR: input file is not a valid ZIP: {input_zip}")
-        return 2
+        if not zipfile.is_zipfile(input_zip):
+            eprint(f"ERROR: input file is not a valid ZIP: {input_zip}")
+            return 2
 
     artifacts: List[SubmissionArtifact] = []
 
@@ -476,11 +521,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         outer_extract = tmpdir / "outer_extracted"
         outer_extract.mkdir(parents=True, exist_ok=True)
 
-        eprint(f"[preprocesslabs] Extracting master ZIP -> {outer_extract}")
         try:
-            safe_extract_zip(input_zip, outer_extract)
+            merge_master_inputs(input_zips, outer_extract)
         except Exception as exc:  # noqa: BLE001
-            eprint(f"ERROR: failed to extract master ZIP: {exc}")
+            eprint(f"ERROR: failed to extract input ZIP(s): {exc}")
             return 3
 
         unzipped_root = tmpdir / "unzipped_submissions"
@@ -492,7 +536,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
 
         if not student_folders:
-            eprint("ERROR: No student folders were found inside the master ZIP.")
+            eprint("ERROR: No student folders were found inside the provided ZIP file(s).")
             return 4
 
         total_zips = 0
