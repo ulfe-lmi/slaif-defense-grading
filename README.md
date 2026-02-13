@@ -1,149 +1,159 @@
-# README.md
+# lab-grading
 
-`preprocesslabs.py` is a small command‑line utility for turning a **"master" ZIP of student submissions** into a **single, readable, concatenated text file**.
+`preprocess-labs.py` is a command-line utility for turning a **master ZIP of student submissions** into readable concatenated text files for grading and review.
 
-It is designed for the common Moodle/Canvas download format where:
+It is designed for Moodle/Canvas-style exports where:
 
-- You start with one ZIP (the *master* ZIP).
-- Inside it there is typically **one folder per student**, e.g.
-  `Name Surname_16712_assignsubmission_file/`
-- Inside each student folder there is usually **another ZIP file** (the student's submission ZIP),
-  or a **submission subfolder** that contains the same files that would have been in the ZIP.
-- Inside each submission ZIP or submission folder there can be multiple files and folders.
+- You start with one ZIP (the *master ZIP*).
+- Inside it there is typically **one folder per student**, e.g. `Name Surname_16712_assignsubmission_file/`.
+- Inside each student folder there is usually either:
+  - one or more nested submission ZIP files, or
+  - submission subfolders that contain the submission files directly.
 
-The tool extracts each submission ZIP to a temporary directory under `/tmp` (or reads submission
-folders directly), finds readable files, concatenates them with clear delimiters, and finally
-creates **one big output file** for all students (or one output file per student if you use the
-output directory option).
+The tool extracts/reads submissions, finds readable source files, wraps them with clear delimiters, and builds either one combined output file or one output file per student.
 
 ---
 
 ## What files are included
 
-Only these file types are concatenated:
+The script includes only these suffixes (case-insensitive):
 
 - `.txt`
 - `.m` (MATLAB)
 - `.py` (Python)
 
-File suffix matching is case‑insensitive (e.g. `.PY` is included).
+Additional filtering is applied:
+
+- Files that look binary are skipped, even if the suffix matches.
+- Text is decoded as UTF-8 with replacement (`errors="replace"`) for robustness with mixed encodings.
 
 ---
 
 ## Output format
 
-Each included file is wrapped with a clear BEGIN/END delimiter.
+Each included file is wrapped with BEGIN/END delimiters.
 
-In the **final output file** (or per-student files), delimiter lines are augmented with:
+In final outputs, delimiter lines include:
 
-1. The student's name (inferred from the top‑level folder name in the master ZIP, e.g. `Name Surname_...` → `Name Surname`).
-2. The submission name (ZIP base name or submission folder name).
-3. The relative file path inside the submission ZIP or folder.
-
-Example delimiter lines:
-
-```
-
-\==== BEGIN Name Surname | submission\_name | path/to/file.py ====  
-... file content ...  
-\==== END Name Surname | submission\_name | path/to/file.py ====
-
-````
-
----
-
-## How it works internally
-
-### Step 1 — Extract the master ZIP
-
-The script creates a temporary working directory under `/tmp` and extracts the master ZIP there.
-
-### Step 2 — Find nested submission ZIPs
-
-It recursively searches inside the extracted master ZIP contents for any files ending in `.zip`.
-
-Each nested ZIP is treated as a *submission ZIP*. If a student folder contains no ZIPs, each
-submission subfolder is treated like a submission ZIP would have been.
-
-### Step 3 — Extract each submission ZIP and create a partial concatenation file
-
-For each submission ZIP or submission folder:
-
-1. ZIPs are extracted under `/tmp` (inside the temporary working directory); folders are read in place.
-2. The extracted contents are searched recursively for files ending in `.txt`, `.m`, or `.py`.
-3. All found readable files are concatenated into a single text file (the **partial concatenation**), named after the submission ZIP:
-   - `submission.zip` → `submission.txt`
-
-The partial files are saved in the temporary working directory while the script runs.
-
-### Step 4 — Create the final output
-
-Finally, the script either:
-
-- Concatenates all partial `.txt` files into the single output file you specify with `--output-file`.
-- Writes one concatenated `.txt` file per student into the directory you specify with `--output-directory`.
-
-While copying each partial file into the big output, it detects delimiter lines and rewrites them to include:
-
-- Student name
-- Submission name (ZIP base name or folder name)
-
----
-
-## Temporary files
-
-All extraction and partial files are created in a temporary directory under `/tmp`, for example:
-
-- `/tmp/preprocesslabs_xxxxxxxx/outer_extracted/...`
-- `/tmp/preprocesslabs_xxxxxxxx/unzipped_submissions/...`
-
-By default, the temporary directory is removed automatically when the script exits.
-
----
-
-## Usage
-
-### Basic
-
-```bash
-python preprocesslabs.py --input-file <MASTER.zip> --output-file <OUTPUT.txt>
-````
-
-### Per-student outputs
-
-```bash
-python preprocesslabs.py --input-file <MASTER.zip> --output-directory <OUTPUT_DIR>
-````
+1. Student name (inferred from the student folder name).
+2. Submission name (ZIP base name or submission folder name).
+3. Relative file path inside that submission.
 
 Example:
 
+```text
+==== BEGIN Jane Doe | submission1 | src/main.py ====
+... file content ...
+==== END Jane Doe | submission1 | src/main.py ====
+```
+
+If a submission contains no readable `.txt` / `.m` / `.py` files, a placeholder block is emitted for that submission.
+
+---
+
+## How processing works
+
+### 1) Extract master ZIP
+
+The script creates a temporary working directory under `/tmp` and safely extracts the master ZIP there.
+
+### 2) Discover submissions per student
+
+For each top-level student folder:
+
+- If nested ZIPs are found recursively, those ZIPs are used as submission sources.
+- If no nested ZIPs are found, direct subfolders are treated as submission sources.
+- If there are no subfolders but there are files directly in the student folder, the student folder itself is treated as a submission source.
+
+### 3) Build per-submission partial outputs
+
+For each submission source:
+
+- ZIP sources are extracted to a temp location.
+- Directory sources are read directly.
+- Readable files are concatenated into a per-submission `.txt` artifact with delimiters.
+
+### 4) Build final output(s)
+
+Then the script writes either:
+
+- a single global output file (`--output-file`), or
+- one output file per student in an output directory (`--output-directory`).
+
+When generating the final output, delimiter lines are augmented with student + submission metadata.
+
+---
+
+## Command line usage
+
 ```bash
-python preprocesslabs.py -i submissions.zip -o all_submissions.txt
+python preprocess-labs.py \
+  --input-file <MASTER.zip> \
+  (--output-file <OUTPUT.txt> | --output-directory <OUTPUT_DIR>) \
+  [--similarity-check]
+```
+
+### Arguments
+
+- `-i, --input-file` (**required**): path to the master ZIP file.
+- `-o, --output-file`: write one combined output file.
+- `-d, --output-directory`: write one output file per student.
+- `--similarity-check`: before writing a single output file, compare submissions and merge near-identical ones into one entry that lists all matched student names.
+
+Notes:
+
+- `--output-file` and `--output-directory` are mutually exclusive.
+- One of them must be provided.
+- Similarity grouping currently uses a threshold of `0.98`.
+
+---
+
+## Examples
+
+### Example A: single combined output
+
+```bash
+python preprocess-labs.py \
+  --input-file data/2025/CV/Vaja5.zip \
+  --output-file data/2025/CV/outputs/vaja5.txt
+```
+
+### Example B: one output file per student
+
+```bash
+python preprocess-labs.py \
+  --input-file data/2025/CV/Vaja5.zip \
+  --output-directory data/2025/CV/outputs/vaja5
+```
+
+### Example C: combined output with similarity grouping
+
+```bash
+python preprocess-labs.py \
+  --input-file data/2025/CV/Vaja5.zip \
+  --output-file data/2025/CV/outputs/vaja5_grouped.txt \
+  --similarity-check
 ```
 
 ### Help
 
 ```bash
-python preprocesslabs.py --help
+python preprocess-labs.py --help
 ```
 
-If you run the script with **no arguments**, it prints the help text.
+If run with no arguments, the script prints help and exits successfully.
 
-* * *
+---
 
-Notes and limitations
----------------------
+## Temporary files and safety
 
-*   The script decodes text as UTF‑8 with replacement for invalid bytes. This avoids crashes on mixed encodings.
-*   Extraction is done with a **path traversal safeguard** (ZIP slip protection) to prevent malicious ZIP entries writing outside the intended `/tmp` directory.
-*   Nested ZIPs found inside the master ZIP are treated as "submission ZIPs". If a student folder does not
-    contain ZIPs, its submission subfolders are used instead. If neither ZIPs nor submission subfolders are
-    found, the script will exit with an error.
+- Temporary files are created under `/tmp/preprocesslabs_*`.
+- Temporary directories are removed automatically on normal exit.
+- ZIP extraction includes path traversal protection (Zip Slip guard).
 
-* * *
+---
 
-Files
------
+## Files in this repo
 
-*   `preprocess-labs.py` — the command-line tool
-*   `README.md` — this documentation
+- `preprocess-labs.py` — command-line preprocessing tool
+- `README.md` — documentation
