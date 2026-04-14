@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 from typing import List
 
-from .models import READABLE_FILENAMES, READABLE_SUFFIXES
+from .models import PDF_SUFFIX, READABLE_FILENAMES, READABLE_SUFFIXES
 
 
 def eprint(*args: object, **kwargs: object) -> None:
@@ -65,6 +65,12 @@ def list_readable_files(extracted_dir: Path) -> List[Path]:
 
     files.sort(key=lambda x: x.as_posix().lower())
     return files
+
+
+def list_pdf_files(extracted_dir: Path) -> List[Path]:
+    pdfs = [p for p in extracted_dir.rglob("*") if p.is_file() and p.suffix.lower() == PDF_SUFFIX]
+    pdfs.sort(key=lambda x: x.as_posix().lower())
+    return pdfs
 
 
 def write_partial_concatenation(extracted_dir: Path, out_path: Path) -> int:

@@ -21,11 +21,20 @@ The script includes only these suffixes (case-insensitive):
 - `.txt`
 - `.m` (MATLAB)
 - `.py` (Python)
+- `.c`, `.h`, `.cpp`, `.hpp` (C/C++)
+- `.ipynb` (Jupyter notebook JSON)
 
 Additional filtering is applied:
 
 - Files that look binary are skipped, even if the suffix matches.
 - Text is decoded as UTF-8 with replacement (`errors="replace"`) for robustness with mixed encodings.
+
+PDF behavior:
+
+- `.pdf` files are **not** concatenated into text output.
+- In `--output-directory` mode, PDF files are copied verbatim next to each student's `.txt` output.
+  - If there is one PDF for a student, it is named `<student_output_basename>.pdf`.
+  - If there are multiple PDFs, they are named `<student_output_basename>-001.pdf`, `<student_output_basename>-002.pdf`, etc.
 
 ---
 
@@ -47,7 +56,7 @@ Example:
 ==== END Jane Doe | submission1 | src/main.py ====
 ```
 
-If a submission contains no readable `.txt` / `.m` / `.py` files, a placeholder block is emitted for that submission.
+If a submission contains no readable text files, a placeholder block is emitted for that submission.
 
 ---
 

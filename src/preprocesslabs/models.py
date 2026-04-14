@@ -4,8 +4,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-READABLE_SUFFIXES = {".txt", ".m", ".py", ".c", ".h", ".cpp", ".hpp"}
+READABLE_SUFFIXES = {".txt", ".m", ".py", ".c", ".h", ".cpp", ".hpp", ".ipynb"}
 READABLE_FILENAMES = {"makefile"}
+PDF_SUFFIX = ".pdf"
 SIMILARITY_THRESHOLD = 0.98
 
 DELIM_RE = re.compile(r"^==== (BEGIN|END) (.+) ====$")

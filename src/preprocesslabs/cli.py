@@ -34,11 +34,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
              If a student folder has no nested ZIPs, uses subfolders as submission sources.
           3) For each submission source (ZIP or folder):
              - extracts ZIPs under /tmp (folders are read directly)
-             - finds readable files: .txt, .m, .py, .c, .h, .cpp, .hpp, MakeFile/Makefile
+             - finds readable files: .txt, .m, .py, .c, .h, .cpp, .hpp, .ipynb, MakeFile/Makefile
              - concatenates them into a per-submission .txt with BEGIN/END delimiters
           4) Either:
              - Concatenates all per-submission .txt files into ONE big output file, or
              - Writes one concatenated output file per student in an output directory.
+               In output-directory mode, PDFs are copied verbatim next to each student's
+               .txt output and renamed to match the .txt basename.
              Every delimiter line in outputs is augmented with the student's name (inferred
              from folder names like "Name Surname_12345_assignsubmission_file") and the
              submission name.
@@ -73,7 +75,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     output_group = parser.add_mutually_exclusive_group(required=True)
     output_group.add_argument("--output-file", "-o", help="Path to write the final big concatenated .txt file.")
-    output_group.add_argument("--output-directory", "-d", help="Directory to write one concatenated .txt file per student.")
+    output_group.add_argument(
+        "--output-directory",
+        "-d",
+        help=(
+            "Directory to write one concatenated .txt file per student. PDFs are copied "
+            "verbatim and renamed to match each student's .txt basename."
+        ),
+    )
 
     parser.add_argument(
         "--similarity-check",

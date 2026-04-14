@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
-from .io_utils import copy_file_preserving_uniqueness, eprint, safe_extract_zip, unique_path
+from .io_utils import copy_file_preserving_uniqueness, eprint, list_pdf_files, safe_extract_zip, unique_path
 from .models import DELIM_RE, SIMILARITY_THRESHOLD, SubmissionArtifact
 
 
@@ -138,9 +138,33 @@ def build_per_student_outputs(artifacts: Sequence[SubmissionArtifact], output_di
         filename = sanitize_filename(student_folder)
         output_path = unique_path(output_dir / f"{filename}.txt")
         build_big_output(student_artifacts, output_path)
+        copy_student_pdfs(student_artifacts, output_path)
         written.append(output_path)
 
     return written
+
+
+def copy_student_pdfs(student_artifacts: Sequence[SubmissionArtifact], output_txt_path: Path) -> List[Path]:
+    pdf_sources: List[Path] = []
+    for art in student_artifacts:
+        pdf_sources.extend(list_pdf_files(art.extracted_dir))
+
+    copied: List[Path] = []
+    if not pdf_sources:
+        return copied
+
+    pdf_base = output_txt_path.with_suffix("")
+    if len(pdf_sources) == 1:
+        target = pdf_base.with_suffix(".pdf")
+        shutil.copy2(pdf_sources[0], target)
+        return [target]
+
+    for idx, src in enumerate(pdf_sources, start=1):
+        target = output_txt_path.parent / f"{pdf_base.name}-{idx:03d}.pdf"
+        shutil.copy2(src, target)
+        copied.append(target)
+
+    return copied
 
 
 def normalize_similarity_text(text: str) -> str:
