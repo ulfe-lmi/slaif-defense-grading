@@ -18,6 +18,32 @@ Prepare these local files:
 
 Do not commit real rosters, submission ZIPs, generated workspaces, private mappings, or final outputs.
 
+From the repository directory, create a local input folder inside `work/`:
+
+```bash
+mkdir -p work/input
+```
+
+Place the downloaded Moodle/Canvas export ZIP, your roster, and the assignment file in `work/input/`. For example, copy the downloaded export there, replacing the filename with the one you downloaded:
+
+```bash
+cp ~/Downloads/moodle_export.zip work/input/
+```
+
+Copy your roster and assignment file there as `students.csv` and `assignment.pdf`, or adjust the paths in the command below to match their actual locations and names. You create `work/input/`; the workflow creates the output directories when needed. The repository's `.gitignore` excludes `work/` from Git.
+
+The example layout is:
+
+```text
+work/
+  input/        # private input files
+  lab-agent/    # generated pseudonymized agent workspace
+  lab-private/  # private mapping and preprocessing outputs
+  final/        # private named instructor outputs
+```
+
+Keep the input files, private mapping, and named outputs outside `lab-agent/`. You may also choose paths outside the repository; supply those paths explicitly in the commands.
+
 ## Install/Setup
 
 ```bash
@@ -30,9 +56,9 @@ pip install -r requirements.txt
 
 ```bash
 python3 slaif-defense-grading.py prepare \
-  --input-file moodle_export.zip \
-  --students-csv students.csv \
-  --task-file assignment.pdf \
+  --input-file work/input/moodle_export.zip \
+  --students-csv work/input/students.csv \
+  --task-file work/input/assignment.pdf \
   --workspace work/lab-agent \
   --private-output work/lab-private
 ```
