@@ -596,6 +596,9 @@ def test_prepare_creates_pseudonymized_workspace_and_private_outputs(tmp_path: P
     assert "Phase 1" not in process_text
     assert "cat .slaif_prompts" not in process_text
     assert process_text.count("codex --ask-for-approval never --full-auto exec --skip-git-repo-check") == 2
+    assert process_text.count("--model gpt-6-astra") == 2
+    assert process_text.count('model_reasoning_effort="xhigh"') == 2
+    assert process_text.count("model_context_window=1000000") == 2
     assert process_text.index("Run oral-verification report for Student 0001") < process_text.index(
         "Run oral-verification report for Student 0002"
     )

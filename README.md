@@ -136,11 +136,11 @@ cd workspace/lab-agent
 ./process.sh
 ```
 
-`process.sh` runs one Codex command per pseudonymized student in roster order:
+`process.sh` runs one Codex command per pseudonymized student in roster order.
 
-```bash
-codex --ask-for-approval never --full-auto exec --skip-git-repo-check "Run oral-verification report for Student 0001"
-```
+The project-owned [`codex.conf`](codex.conf) sets the model, reasoning effort, and context window. Its defaults are `gpt-6-astra`, `xhigh`, and 1,000,000 tokens. Edit it before running `prepare` to change the generated commands. Python reads the file locally and embeds the settings as command-line arguments in each Codex invocation; Codex does not read this file. Existing workspaces retain the settings captured when they were prepared.
+
+The context setting tells Codex the window size to use for context management; actual model and account limits still apply.
 
 There is no agent-run Phase 1. Association generation is local preprocessing and is already complete before `process.sh` runs.
 
