@@ -142,6 +142,8 @@ The project-owned [`codex.conf`](codex.conf) sets the model, reasoning effort, a
 
 The context setting tells Codex the window size to use for context management; actual model and account limits still apply.
 
+Running `process.sh` creates `token_usage.csv` in the workspace with input and output token counts for each pseudonym and a `TOTAL` row. The total is marked `incomplete` when any student has failed, has not started, or has no reported usage; its numbers include only the available counts. Empty fields mean usage is unknown. Each invocation of `process.sh` replaces the previous accounting file. The script stops on a failed Codex call. Codex JSON events are displayed on stdout and are not saved as a transcript by this workflow.
+
 There is no agent-run Phase 1. Association generation is local preprocessing and is already complete before `process.sh` runs.
 
 ## Finalize Named Local Outputs
