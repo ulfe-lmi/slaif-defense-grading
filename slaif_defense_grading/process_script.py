@@ -1,14 +1,36 @@
 from __future__ import annotations
 
+import configparser
+import json
 import os
+import shlex
 from pathlib import Path
 from typing import Sequence
 
 
-def render_process_script(template_path: Path, output_path: Path, pseudonyms: Sequence[str]) -> None:
+CONFIG_PATH = Path(__file__).resolve().parent.parent / "codex.conf"
+
+
+def render_process_script(
+    template_path: Path, output_path: Path, pseudonyms: Sequence[str], config_path: Path = CONFIG_PATH
+) -> None:
+    config = configparser.ConfigParser(interpolation=None)
+    with config_path.open(encoding="utf-8") as config_file:
+        config.read_file(config_file)
+    model = config.get("codex", "model").strip()
+    effort = config.get("codex", "reasoning_effort").strip()
+    context_window = config.getint("codex", "context_window")
+    if not model or effort not in {"minimal", "low", "medium", "high", "xhigh", "max"} or context_window <= 0:
+        raise ValueError(f"Invalid Codex settings in {config_path}")
+    options = (
+        f"--model {shlex.quote(model)} "
+        f"-c {shlex.quote('model_reasoning_effort=' + json.dumps(effort))} "
+        f"-c model_context_window={context_window}"
+    )
     template = template_path.read_text(encoding="utf-8")
     phase2_commands = "\n".join(
-        f'codex --ask-for-approval never --full-auto exec --skip-git-repo-check "Run oral-verification report for {pseudonym}"'
+        f'codex --ask-for-approval never --full-auto exec --skip-git-repo-check {options} '
+        f'{shlex.quote("Run oral-verification report for " + pseudonym)}'
         for pseudonym in pseudonyms
     )
 

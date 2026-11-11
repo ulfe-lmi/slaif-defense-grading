@@ -67,6 +67,8 @@ cd -
 
 `process.sh` runs one Codex command per pseudonymized student in roster order. It does not run Phase 1; `associations.csv` was generated locally by `prepare`.
 
+Before `prepare`, edit `codex.conf` in the project to change the default model (`gpt-6-astra`), reasoning effort (`xhigh`), or context window (1,000,000 tokens). These settings are embedded in the generated commands, so changes require preparing a new workspace.
+
 ## Finalize Named Local Outputs
 
 After the agent creates reports such as `Student 0001/report_aspects.md`, run:
