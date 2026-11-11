@@ -48,16 +48,20 @@ def run_student(student, command):
                 print(line, end="", flush=True)
                 try:
                     event = json.loads(line)
-                    usage = event.get("usage") if event.get("type") == "turn.completed" else None
-                    if usage is not None:
-                        input_tokens, output_tokens = usage["input_tokens"], usage["output_tokens"]
-                        if type(input_tokens) is int and input_tokens >= 0 and type(output_tokens) is int and output_tokens >= 0:
-                            row["input_tokens"] = str(input_tokens)
-                            row["output_tokens"] = str(output_tokens)
-                            usage_seen = True
-                            write_rows(rows)
-                except (ValueError, TypeError, KeyError, AttributeError):
-                    pass
+                except json.JSONDecodeError:
+                    # Codex may emit non-JSON output; it cannot contain a usage event.
+                    continue
+                if not isinstance(event, dict) or event.get("type") != "turn.completed":
+                    continue
+                usage = event.get("usage")
+                if not isinstance(usage, dict):
+                    continue
+                input_tokens, output_tokens = usage.get("input_tokens"), usage.get("output_tokens")
+                if type(input_tokens) is int and input_tokens >= 0 and type(output_tokens) is int and output_tokens >= 0:
+                    row["input_tokens"] = str(input_tokens)
+                    row["output_tokens"] = str(output_tokens)
+                    usage_seen = True
+                    write_rows(rows)
             exit_code = process.wait()
     finally:
         row["status"] = ("completed" if usage_seen else "usage_unavailable") if exit_code == 0 else "failed"
