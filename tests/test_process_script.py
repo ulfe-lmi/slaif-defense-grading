@@ -12,6 +12,7 @@ def test_config_is_passed_to_every_codex_command(tmp_path: Path, monkeypatch) ->
     config.write_text("[codex]\nmodel = custom-model\nreasoning_effort = high\ncontext_window = 123456\n")
     template = tmp_path / "template"
     template.write_text("#!/bin/bash\nset -euo pipefail\n# PHASE2_COMMANDS\n")
+    (tmp_path / "prompt.txt").write_text("Editable task prompt line.\n", encoding="utf-8")
     output = tmp_path / "process.sh"
     render_process_script(template, output, ["Student 0001", "Student 0002"], config)
 
@@ -31,7 +32,8 @@ def test_config_is_passed_to_every_codex_command(tmp_path: Path, monkeypatch) ->
         assert call[call.index("--model") + 1] == "custom-model"
         assert 'model_reasoning_effort="high"' in call
         assert "model_context_window=123456" in call
-        assert call[-1] == f"Run oral-verification report for {student}"
+        assert "project_root_markers=[]" in call
+        assert call[-1] == f"Run oral-verification report for {student}. Editable task prompt line."
     with (tmp_path / "token_usage.csv").open(newline="") as f:
         rows = list(csv.DictReader(f))
     assert [row["status"] for row in rows] == ["usage_unavailable", "usage_unavailable", "incomplete"]

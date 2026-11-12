@@ -348,7 +348,7 @@ def test_quickstart_documents_complete_workflow() -> None:
     assert "instructor_reports/<Name>/report_aspects.md" in text
     assert "Do not send it wholesale to students" in text
     assert "--include-opaque-documents" in text
-    assert "--task-file assignment.pdf" in text
+    assert "--task-file work/input/assignment.pdf" in text
     assert "task.pdf" in text
     assert "submissions completed outside direct supervision" in text
     assert "legacy" not in text.casefold()
@@ -595,7 +595,9 @@ def test_prepare_creates_pseudonymized_workspace_and_private_outputs(tmp_path: P
     assert process_sh.stat().st_mode & stat.S_IXUSR
     assert "Phase 1" not in process_text
     assert "cat .slaif_prompts" not in process_text
-    assert process_text.count("codex --ask-for-approval never --full-auto exec --skip-git-repo-check") == 2
+    assert "test -f prompt.txt" in process_text
+    assert process_text.count("$(cat prompt.txt)") == 2
+    assert process_text.count("codex --ask-for-approval never exec --skip-git-repo-check") == 2
     assert process_text.count("--model gpt-6-astra") == 2
     assert process_text.count('model_reasoning_effort="xhigh"') == 2
     assert process_text.count("model_context_window=1000000") == 2
@@ -605,6 +607,9 @@ def test_prepare_creates_pseudonymized_workspace_and_private_outputs(tmp_path: P
     assert "Ana Novak" not in process_text
     assert "Boris Kovac" not in process_text
     assert not (workspace / ".slaif_prompts").exists()
+    assert (workspace / "prompt.txt").read_text(encoding="utf-8") == (
+        REPO_ROOT / "templates" / "workspace" / "prompt.txt"
+    ).read_text(encoding="utf-8")
 
     agents_md = workspace / "AGENTS.md"
     assert agents_md.exists()
@@ -821,6 +826,8 @@ def test_messy_prepare_default_mode_end_to_end_audit(tmp_path: Path) -> None:
     assert process_sh.stat().st_mode & stat.S_IXUSR
     assert "Phase 1" not in process_text
     assert "cat .slaif_prompts" not in process_text
+    assert "test -f prompt.txt" in process_text
+    assert process_text.count("$(cat prompt.txt)") == 5
     assert process_text.count("Run oral-verification report for Student ") == 5
     for idx in range(1, 5):
         assert process_text.index(f"Run oral-verification report for Student {idx:04d}") < process_text.index(

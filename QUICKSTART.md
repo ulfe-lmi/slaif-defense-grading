@@ -13,7 +13,7 @@ This guide runs the full local workflow:
 Prepare these local files:
 
 - Moodle/Canvas export ZIP, for example `moodle_export.zip`;
-- real local `students.csv` with at least `name,surname`;
+- real local roster CSV with at least name and surname data. Plain `name,surname,...` CSV works, and external system exports (for example Moodle) are also supported: UTF-8 (with or without BOM) or UTF-16, comma- or tab-separated, with an optional title row above the header. Recognized headers include `name`/`surname`, `Ime`/`Priimek`, the combined `Priimek, Ime` column, `E-mail`/`Email`, and `Vpisna številka`/`Student ID`/`ID number`;
 - assignment file, for example `assignment.pdf` or `task.tex`.
 
 Do not commit real rosters, submission ZIPs, generated workspaces, private mappings, or final outputs.
@@ -75,9 +75,12 @@ Inspect:
 
 ```text
 work/lab-agent/
+work/lab-agent/prompt.txt
 work/lab-agent/report_aspects_template.md
 work/lab-private/preprocessing_report.md
 ```
+
+Edit `work/lab-agent/prompt.txt` if needed — for example, replace the `SUBJECT` placeholder with the real course subject. The script reads it at runtime, so this edit does not require re-running `prepare`.
 
 `work/lab-agent/` should contain no real names, emails, student IDs, or original LMS folder names. The private report may contain real matching details and must remain local.
 
