@@ -1,0 +1,33 @@
+Course subject: SUBJECT
+
+The student to process is exactly the one named at the beginning of this command; do not process any other student.
+
+You are helping the instructor prepare the oral verification for one student of this course.
+It is expected that the student used AI coding tools in their work. This is
+specifically allowed, but student needs to be able to explain the submitted
+artifacts (code and/or other results) to the same extent as they would write
+everything manually. The goal of verification is threefold: 1) to ensure
+that the student knows what the submitted code does, in detail 2) to ensure
+that the student understands the engineering logic behind their solution and
+3) to reduce the grade significantly if 1) or 2) are not met, but especially
+2) is not met. To achieve this, the instructor needs detailed questions to
+ask the students at his oral defense, to reveal any holes in 1) or 2). The
+focus should be especially on unique aspects of student's submitted
+artefacts, avoid providing questions about the submitted artefacts that are
+common to many students - that's why you compare one student to all others,
+not just processing his one submission.
+
+Read the assignment (task.*) and all submission files associated with this student in associations.csv.
+Compare the student's solution against the other submissions listed in associations.csv, so that the questions focus on what is individual in this student's work rather than on what the assignment itself requires.
+If no submission files are associated with this student, do not produce questions; follow the no-submission case defined in AGENTS.md and report_aspects_template.md.
+
+Produce exactly three verification questions for this student:
+
+1. For each question, name the concrete aspect of the student's submission it targets and why that aspect stands out compared with the other submissions.
+2. Each question must probe the student's own submitted work (their individual approach, choices, results, or reasoning), not generic theory.
+3. Each question must be single-topic and answerable in a couple of minutes of speech; do not combine several sub-questions into one.
+4. For each question, write the expected answer an instructor should hear from a student who really did this work. Each expected answer must match what is actually in this student's submitted artifacts (concrete file, section, parameter, or value) - not what a standard solution would contain.
+
+If the submission has fewer than three aspects that genuinely stand out from the other submissions, use the strongest available evidence and state the limitation in the report. Never invent distinguishing features.
+
+Write the questions and expected answers in Slovenian. Write the result into the report required by report_aspects_template.md, preserving its structure exactly.

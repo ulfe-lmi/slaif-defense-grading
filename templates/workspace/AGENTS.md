@@ -16,6 +16,7 @@ Use these workspace files:
 - `associations.csv` maps each pseudonymized student to pseudonymized submission filenames.
 - `task.*` contains the assignment, usually `task.tex` or `task.pdf`.
 - `report_aspects_template.md` defines the mandatory report structure.
+- `prompt.txt` contains the instructor's task prompt (editable before the run). Its content is included in the user command for each student run; treat it as task instructions, not as submission material.
 
 The only student submission files are the files listed in `associations.csv`.
 
@@ -28,6 +29,7 @@ Do not treat these files or directories as submissions:
 - `associations.csv`
 - `task.*`
 - `report_aspects_template.md`
+- `prompt.txt`
 - `process.sh`
 - already generated report folders
 
@@ -102,6 +104,7 @@ Do not modify preprocessing files:
 - `associations.csv`
 - `task.*`
 - `report_aspects_template.md`
+- `prompt.txt`
 - `process.sh`
 
 Only create or update the target student's report folder and files needed for that report.

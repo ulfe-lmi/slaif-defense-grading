@@ -32,8 +32,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
             Real roster data is read locally from --students-csv. The generated workspace
             receives only pseudonyms, a canonical task.* assignment file, a workspace
-            AGENTS.md, a report template, pseudonymized submission text files,
-            associations.csv, and a locally rendered process.sh. The private pseudonym map,
+            AGENTS.md, a report template, the editable task prompt prompt.txt,
+            pseudonymized submission text files, associations.csv, and a locally
+            rendered process.sh. The private pseudonym map,
             student-output copies, and preprocessing report are written under
             --private-output, outside the workspace.
             """
@@ -133,6 +134,7 @@ def run_prepare(args: argparse.Namespace) -> int:
     template_path = REPO_ROOT / "templates" / "process.sh.tpl"
     workspace_agents_template = REPO_ROOT / "templates" / "workspace" / "AGENTS.md"
     report_template = REPO_ROOT / "templates" / "workspace" / "report_aspects_template.md"
+    prompt_template = REPO_ROOT / "templates" / "workspace" / "prompt.txt"
 
     try:
         result = prepare_workspace(
@@ -144,6 +146,7 @@ def run_prepare(args: argparse.Namespace) -> int:
             template_path=template_path,
             workspace_agents_template=workspace_agents_template,
             report_template=report_template,
+            prompt_template=prompt_template,
             include_opaque_documents=args.include_opaque_documents,
         )
     except Exception as exc:  # noqa: BLE001

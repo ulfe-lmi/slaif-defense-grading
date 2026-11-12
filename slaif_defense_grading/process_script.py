@@ -26,13 +26,17 @@ def render_process_script(
     options = (
         f"--model {shlex.quote(model)} "
         f"-c {shlex.quote('model_reasoning_effort=' + json.dumps(effort))} "
-        f"-c model_context_window={context_window}"
+        f"-c model_context_window={context_window} "
+        f"-c {shlex.quote('project_root_markers=[]')}"
     )
+    # project_root_markers=[] pins the Codex project root to the workspace
+    # itself, so AGENTS.md files from an enclosing repository (or any parent
+    # directory) are not loaded into the pseudonymized agent's instructions.
     template = template_path.read_text(encoding="utf-8")
     phase2_commands = "\n".join(
         f'python3 token_usage.py run {shlex.quote(pseudonym)} '
-        f'codex --ask-for-approval never --full-auto exec --skip-git-repo-check --json {options} '
-        f'{shlex.quote("Run oral-verification report for " + pseudonym)}'
+        f'codex --ask-for-approval never exec --skip-git-repo-check --json {options} '
+        f'"Run oral-verification report for {pseudonym}. $(cat prompt.txt)"'
         for pseudonym in pseudonyms
     )
 

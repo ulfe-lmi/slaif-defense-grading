@@ -55,6 +55,7 @@ python3 slaif-defense-grading.py prepare \
 `prepare` currently:
 
 - reads the private real `students.csv` locally;
+- accepts external roster exports (Moodle/Excel): UTF-8 with or without BOM, or UTF-16; comma- or tab-separated; an optional title row above the header; and recognized headers such as `name`/`surname`, `Ime`/`Priimek`, the combined `Priimek, Ime` column, `E-mail`/`Email`, and `Vpisna številka`/`Student ID`/`ID number`;
 - assigns deterministic pseudonyms in CSV order, such as `Student 0001`;
 - processes Moodle/Canvas-style ZIP exports with safe ZIP extraction;
 - creates a pseudonymized agent workspace;
@@ -65,6 +66,7 @@ python3 slaif-defense-grading.py prepare \
 - generates pseudonymized `associations.csv`;
 - copies `templates/workspace/AGENTS.md` into the workspace as `AGENTS.md`;
 - copies `templates/workspace/report_aspects_template.md` into the workspace;
+- copies `templates/workspace/prompt.txt` into the workspace as `prompt.txt`, the editable task prompt;
 - renders executable `process.sh`;
 - writes pseudonymized student-output copies for instructor/student review;
 - writes private `student_outputs_index.csv`;
@@ -83,6 +85,7 @@ lab-agent/
   Student_0002.txt
   associations.csv
   process.sh
+  prompt.txt
   report_aspects_template.md
   students.csv
   task.pdf
@@ -138,6 +141,8 @@ cd workspace/lab-agent
 
 `process.sh` runs one Codex command per pseudonymized student in roster order.
 
+Each per-student command embeds the current content of `prompt.txt` (read at runtime), so you can edit `prompt.txt` in the workspace after `prepare` and before running `process.sh` without re-preparing. Replace the `SUBJECT` placeholder with the real course subject there.
+
 The project-owned [`codex.conf`](codex.conf) sets the model, reasoning effort, and context window. Its defaults are `gpt-6-astra`, `xhigh`, and 1,000,000 tokens. Edit it before running `prepare` to change the generated commands. Python reads the file locally and embeds the settings as command-line arguments in each Codex invocation; Codex does not read this file. Existing workspaces retain the settings captured when they were prepared.
 
 The context setting tells Codex the window size to use for context management; actual model and account limits still apply.
@@ -190,7 +195,7 @@ There are two different `AGENTS.md` files:
 
 Preprocessing is not an agent task. The later agent should use `students.csv`, `associations.csv`, and the generated assignment file (`task.tex`, `task.pdf`, or another `task.*`), and should treat only files listed in `associations.csv` as student submissions.
 
-There is no `.slaif_prompts/` directory.
+The task prompt is the visible, editable `prompt.txt` in the workspace (copied from `templates/workspace/prompt.txt` during `prepare`). `process.sh` reads it at runtime, so there is no hidden prompt directory.
 
 ## Privacy Model
 
@@ -204,6 +209,7 @@ The default workspace is pseudonymized text-only material.
 - `report_aspects_template.md` is copied into the workspace and included in the same text leak-check boundary.
 - Known full names, emails, and `student_id` values are scrubbed from generated text outputs before the workspace leak check runs.
 - Private `student_outputs/` files are pseudonymized copies of the generated agent input text files and must not contain real names, emails, student IDs, or LMS folder names.
+- Each `process.sh` Codex command pins the project root to the workspace itself (`project_root_markers=[]`), so the agent loads the workspace `AGENTS.md` only and not `AGENTS.md` files from an enclosing repository or any parent directory.
 
 Matching is conservative. LMS folders are matched to roster rows by exact normalized `name surname` from the folder prefix before the first Moodle underscore:
 

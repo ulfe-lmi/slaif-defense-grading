@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import csv
+import io
 import re
 import shutil
 import tempfile
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 from .core import (
     infer_student_label_from_folder,
@@ -103,6 +104,44 @@ ASSOCIATION_COLUMNS = [
     "evidence",
 ]
 
+# Canonical roster column order (also used for the private pseudonym map).
+CANONICAL_ROSTER_COLUMNS = ["name", "surname", "full_name", "email", "student_id"]
+
+# Marker for a single header cell holding "Surname, Name" (Slovenian Moodle
+# roster exports, e.g. the "Priimek, Ime" column), split into both columns.
+SPLIT_SURNAME_NAME = "__split_surname_name"
+
+# Known header labels from external rosters (e.g. Moodle exports). Keys are
+# normalized (trimmed, BOM-stripped, casefolded) header cells.
+ROSTER_HEADER_ALIASES: Dict[str, str] = {
+    "ime": "name",
+    "name": "name",
+    "first name": "name",
+    "firstname": "name",
+    "priimek": "surname",
+    "surname": "surname",
+    "last name": "surname",
+    "lastname": "surname",
+    "priimek, ime": SPLIT_SURNAME_NAME,
+    "priimek,ime": SPLIT_SURNAME_NAME,
+    "full name": "full_name",
+    "full_name": "full_name",
+    "fullname": "full_name",
+    "e-mail": "email",
+    "email": "email",
+    "email address": "email",
+    "e-mail address": "email",
+    "id number": "student_id",
+    "student id": "student_id",
+    "student_id": "student_id",
+    "vpisna številka": "student_id",
+    "vpisna stevilka": "student_id",
+}
+
+
+def _normalize_header_label(label: str) -> str:
+    return label.lstrip("\ufeff").strip().casefold()
+
 
 def normalize_identity(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip()).casefold()
@@ -121,37 +160,115 @@ def workspace_task_filename(task_file: Path) -> str:
     return f"task{suffix}" if suffix else "task"
 
 
+def detect_roster_encoding(students_csv: Path) -> str:
+    """Detect the roster file encoding from a leading BOM, if any.
+
+    Instructor rosters are frequently exported from Moodle, Excel, or
+    Notepad as UTF-16; a UTF-16 BOM would otherwise crash the UTF-8
+    reader with an unhelpful ``codec can't decode byte 0xff`` error.
+    """
+    head = students_csv.read_bytes()[:4]
+    if head.startswith(b"\xff\xfe") or head.startswith(b"\xfe\xff"):
+        # The utf-16 codec consumes the BOM and picks the byte order from it.
+        return "utf-16"
+    if head.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    try:
+        head.decode("utf-8")
+    except UnicodeDecodeError:
+        if b"\x00" in head:
+            # NUL bytes are not valid UTF-8; assume BOM-less UTF-16
+            # (common in Excel exports), which defaults to little-endian.
+            return "utf-16"
+        raise ValueError(
+            f"students CSV is not valid UTF-8 (and has no recognized BOM): {students_csv}. "
+            "Re-save the roster as UTF-8 (or UTF-8 with BOM) and try again."
+        ) from None
+    return "utf-8"
+
+
 def read_roster(students_csv: Path) -> List[RosterStudent]:
-    with students_csv.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        if reader.fieldnames is None:
-            raise ValueError("students CSV is missing a header row")
+    text = students_csv.read_bytes().decode(detect_roster_encoding(students_csv))
 
-        fieldnames = [field.strip() for field in reader.fieldnames]
-        missing = [field for field in ("name", "surname") if field not in fieldnames]
-        if missing:
-            raise ValueError(f"students CSV is missing required column(s): {', '.join(missing)}")
+    lines = [line for line in text.splitlines() if line.strip()]
+    if not lines:
+        raise ValueError("students CSV is empty")
+    delimiter = "\t" if any("\t" in line for line in lines[:10]) else ","
 
-        students: List[RosterStudent] = []
-        for idx, raw_row in enumerate(reader, start=1):
-            row = {field: (raw_row.get(field) or "").strip() for field in fieldnames}
-            name = row["name"]
-            surname = row["surname"]
-            if not name or not surname:
-                raise ValueError(f"students CSV row {idx} must have non-empty name and surname")
+    rows = list(csv.reader(io.StringIO(text, newline=""), delimiter=delimiter))
+    header_index = None
+    for index, row in enumerate(rows[:10]):
+        provides = {
+            ROSTER_HEADER_ALIASES[_normalize_header_label(cell)]
+            for cell in row
+            if _normalize_header_label(cell) in ROSTER_HEADER_ALIASES
+        }
+        if SPLIT_SURNAME_NAME in provides:
+            provides.update({"name", "surname"})
+        if {"name", "surname"} <= provides:
+            header_index = index
+            break
+    if header_index is None:
+        raise ValueError(
+            "students CSV has no header row with name and surname columns "
+            "(searched the first 10 lines; known header labels include "
+            "name, surname, ime, priimek, and 'Priimek, Ime')"
+        )
 
-            full_name = row.get("full_name") or f"{name} {surname}"
-            students.append(
-                RosterStudent(
-                    row_number=idx,
-                    row=row,
-                    fieldnames=fieldnames,
-                    name=name,
-                    surname=surname,
-                    full_name=full_name.strip(),
-                    pseudonym_index=idx,
-                )
+    header_row = rows[header_index]
+    columns: List[Optional[str]] = []
+    split_index: Optional[int] = None
+    for position, cell in enumerate(header_row):
+        label = _normalize_header_label(cell)
+        if label not in ROSTER_HEADER_ALIASES:
+            columns.append(None)
+            continue
+        canonical = ROSTER_HEADER_ALIASES[label]
+        if canonical == SPLIT_SURNAME_NAME:
+            split_index = position
+            columns.append(None)
+        else:
+            columns.append(canonical)
+
+    provided = {name for name in columns if name}
+    if split_index is not None:
+        provided.update({"name", "surname"})
+    fieldnames = [name for name in CANONICAL_ROSTER_COLUMNS if name in provided]
+
+    students: List[RosterStudent] = []
+    for idx, row in enumerate(rows[header_index + 1:], start=1):
+        if not row or all(not cell.strip() for cell in row):
+            continue
+        values: Dict[str, str] = {}
+        for position, cell in enumerate(row):
+            canonical = columns[position] if position < len(columns) else None
+            if canonical and canonical not in values:
+                values[canonical] = cell.strip()
+        if split_index is not None and split_index < len(row):
+            # "Priimek, Ime" cells hold "Surname, Name" in one column.
+            surname_part, _, name_part = row[split_index].strip().partition(",")
+            if not values.get("surname"):
+                values["surname"] = surname_part.strip()
+            if not values.get("name"):
+                values["name"] = name_part.strip()
+
+        name = values.get("name", "")
+        surname = values.get("surname", "")
+        if not name or not surname:
+            raise ValueError(f"students CSV row {idx} must have non-empty name and surname")
+
+        full_name = values.get("full_name") or f"{name} {surname}"
+        students.append(
+            RosterStudent(
+                row_number=idx,
+                row=values,
+                fieldnames=fieldnames,
+                name=name,
+                surname=surname,
+                full_name=full_name.strip(),
+                pseudonym_index=idx,
             )
+        )
 
     seen: Dict[str, RosterStudent] = {}
     duplicates: List[str] = []
@@ -534,6 +651,7 @@ def prepare_workspace(
     template_path: Path,
     workspace_agents_template: Path,
     report_template: Path,
+    prompt_template: Path,
     include_opaque_documents: bool = False,
 ) -> PrepareResult:
     students = read_roster(students_csv)
@@ -556,6 +674,8 @@ def prepare_workspace(
         raise FileNotFoundError(f"workspace AGENTS template does not exist: {workspace_agents_template}")
     if not report_template.exists():
         raise FileNotFoundError(f"report template does not exist: {report_template}")
+    if not prompt_template.exists():
+        raise FileNotFoundError(f"prompt template does not exist: {prompt_template}")
 
     workspace.mkdir(parents=True, exist_ok=True)
     private_output.mkdir(parents=True, exist_ok=True)
@@ -566,6 +686,10 @@ def prepare_workspace(
     shutil.copy2(workspace_agents_template, workspace / "AGENTS.md")
     shutil.copy2(report_template, workspace / "report_aspects_template.md")
     shutil.copy2(task_file, task_workspace_path)
+    # Editable task prompt: the instructor may adjust it (e.g. replace the
+    # SUBJECT placeholder) before running process.sh. process.sh reads it at
+    # runtime and embeds it into every per-student Codex command.
+    shutil.copy2(prompt_template, workspace / "prompt.txt")
 
     matched_students: Dict[int, RosterStudent] = {}
     unmatched_folders: List[str] = []
